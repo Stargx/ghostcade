@@ -37,16 +37,22 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _verifyBadge = "";
     [ObservableProperty] private string _driverBadge = "";
     [ObservableProperty] private string _favoriteIndicator = "";
-    [ObservableProperty] private string _countdownText = "";
+    [ObservableProperty] private string _countdownLabel = "NEXT GAME IN";
+    [ObservableProperty] private string _countdownValue = "-:--";
     [ObservableProperty] private string _queueText = "";
     [ObservableProperty] private string _statusMessage = "";
-    [ObservableProperty] private string _stageMessage = "loading catalog…";
-    [ObservableProperty] private string _holdLabel = "⏸  Hold";
-    [ObservableProperty] private string _muteLabel = "🔊  Sound on";
-    [ObservableProperty] private string _favoriteLabel = "☆  Favourite";
+    [ObservableProperty] private string _stageMessage = "LOADING CATALOG…";
+    [ObservableProperty] private string _aboutText = "";
+    [ObservableProperty] private string _holdLabel = "HOLD";
+    [ObservableProperty] private string _muteLabel = "SOUND ON";
+    [ObservableProperty] private string _holdGlyph = "";       // pause
+    [ObservableProperty] private string _muteGlyph = "";       // speaker
+    [ObservableProperty] private string _favoriteGlyph = "";   // star outline
     [ObservableProperty] private ImageSource? _marqueeImage;
     [ObservableProperty] private ImageSource? _maskImage;
     [ObservableProperty] private bool _isMuted;
+
+    private Dictionary<string, string> _history = new(StringComparer.Ordinal);
 
     public MainViewModel(AppConfig config, AppPaths paths)
     {
@@ -108,9 +114,20 @@ public sealed partial class MainViewModel : ObservableObject
         _engine.HoldChanged += held => _dispatcher.BeginInvoke(() => OnHoldChanged(held));
         _engine.StateChanged += s => _dispatcher.BeginInvoke(() => OnStateChanged(s));
 
-        StageMessage = "starting rotation…";
+        StageMessage = "STARTING ROTATION…";
         _countdownTimer.Start();
         _ = _engine.StartAsync(_cts.Token);
+        _ = LoadHistoryAsync(mameExe);
+    }
+
+    private async Task LoadHistoryAsync(string mameExe)
+    {
+        var path = Path.Combine(Path.GetDirectoryName(mameExe)!, "history.dat");
+        var wanted = _db!.All.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+        var history = await Task.Run(() => HistoryDat.LoadAsync(path, wanted, ct: _cts.Token));
+        _history = history;
+        if (_engine?.CurrentGame is { } current)
+            AboutText = _history.GetValueOrDefault(current, "");
     }
 
     public async Task ShutdownAsync()
@@ -142,6 +159,7 @@ public sealed partial class MainViewModel : ObservableObject
         _gameDeadline = DateTimeOffset.Now.AddSeconds(_config.Rotation.DwellSeconds);
         StageMessage = "";
         StatusMessage = "";
+        AboutText = _history.GetValueOrDefault(game, "");
 
         var marqueePath = _art!.FindMarquee(game);
         var snapPath = _art.FindSnap(game);
@@ -181,7 +199,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void OnHoldChanged(bool held)
     {
-        HoldLabel = held ? "▶  Resume" : "⏸  Hold";
+        HoldLabel = held ? "RESUME" : "HOLD";
+        HoldGlyph = held ? "" : ""; // play : pause
         UpdateCountdown();
     }
 
@@ -189,30 +208,34 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (s == RotationState.Faulted)
         {
-            StageMessage = "rotation stopped — MAME appears broken (moved exe? share offline?)\nfix and restart Attractor";
-            CountdownText = "";
+            StageMessage = "ROTATION STOPPED\n\nMAME unreachable — moved exe? share offline?\nfix and restart Attractor";
+            CountdownLabel = "STOPPED";
+            CountdownValue = "--:--";
         }
     }
 
     private void UpdateCountdown()
     {
         if (_engine is null) return;
+        if (_engine.State == RotationState.Faulted) return;
         if (_engine.IsHeld)
         {
-            CountdownText = "⏸ on hold — game stays";
+            CountdownLabel = "ON HOLD";
+            CountdownValue = "--:--";
             return;
         }
+        CountdownLabel = "NEXT GAME IN";
         var remaining = _gameDeadline - DateTimeOffset.Now;
-        CountdownText = remaining > TimeSpan.Zero
-            ? $"next game in {(int)remaining.TotalMinutes}:{remaining.Seconds:00}"
-            : "next game soon…";
+        CountdownValue = remaining > TimeSpan.Zero
+            ? $"{(int)remaining.TotalMinutes}:{remaining.Seconds:00}"
+            : "0:00";
     }
 
     private void UpdateFavoriteVisuals(string game)
     {
         bool fav = _db!.Favorites.Contains(game);
-        FavoriteIndicator = fav ? "⭐ favourite" : "";
-        FavoriteLabel = fav ? "⭐  Unfavourite" : "☆  Favourite";
+        FavoriteIndicator = fav ? "FAVOURITE" : "";
+        FavoriteGlyph = fav ? "" : ""; // filled : outline star
     }
 
     private async Task ApplyMuteWithRetryAsync(int pid, bool mute)
@@ -254,7 +277,8 @@ public sealed partial class MainViewModel : ObservableObject
     private void Mute()
     {
         IsMuted = !IsMuted;
-        MuteLabel = IsMuted ? "🔇  Muted" : "🔊  Sound on";
+        MuteLabel = IsMuted ? "MUTED" : "SOUND ON";
+        MuteGlyph = IsMuted ? "" : ""; // muted : speaker
         if (_currentPid != 0)
             _ = ApplyMuteWithRetryAsync(_currentPid, IsMuted);
     }
