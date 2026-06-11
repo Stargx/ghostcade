@@ -83,7 +83,7 @@
           <Image Grid.Row="2" Source="pack://application:,,,/assets/img/bottom_screen.jpg" Stretch="Fill"/>
 
           <!-- the MAME window is glued over this region; snap art masks gaps -->
-          <Grid x:Name="HostRegion" Grid.Row="0" Grid.RowSpan="3" Margin="120,98,50,112">
+          <Grid x:Name="HostRegion" Grid.Row="0" Grid.RowSpan="3" Margin="120,36,50,48">
             <Image Source="{Binding MaskImage}" Stretch="Uniform" Opacity="0.85"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
             <TextBlock Text="{Binding StageMessage}" Foreground="#FF3FE3FF" FontFamily="{StaticResource PixelFont}"
