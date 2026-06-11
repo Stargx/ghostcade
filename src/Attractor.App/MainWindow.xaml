@@ -32,13 +32,25 @@
       <Grid Grid.Row="0">
         <Image Source="pack://application:,,,/assets/img/top_banner.jpg" Stretch="Fill"/>
         <Grid Margin="210,36,205,36">
-          <TextBlock Text="{Binding Title}" Style="{StaticResource PixelTitle}"
-                     FontSize="26" Foreground="{StaticResource Amber}"
+          <!-- text marquee only when a game has no marquee art -->
+          <TextBlock Text="{Binding Title}"
+                     FontFamily="{StaticResource PixelFont}" FontSize="26"
+                     Foreground="{StaticResource Amber}" LineHeight="38"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                     TextAlignment="Center" Margin="20,0">
+                     TextAlignment="Center" TextWrapping="Wrap" Margin="20,0">
             <TextBlock.Effect>
               <DropShadowEffect Color="{StaticResource AmberColor}" BlurRadius="18" ShadowDepth="0" Opacity="0.9"/>
             </TextBlock.Effect>
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Visibility" Value="Collapsed"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding MarqueeImage}" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Visible"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
           </TextBlock>
           <Image Source="{Binding MarqueeImage}" Stretch="Uniform" Margin="6"
                  RenderOptions.BitmapScalingMode="HighQuality"/>

@@ -215,7 +215,17 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _currentPid = w.Pid;
         if (_hostRect is null) return;
-        _embedder.Embed(w.Hwnd, _ownerHwnd, _hostRect(), w.NativeClientSize);
+
+        // Arcade monitors are 4:3; trust the catalog's orientation rather than
+        // measuring MAME's freshly-spawned window (unreliable mid-load, and it
+        // left portrait games ~20% undersized). MAME letterboxes internally if
+        // a particular game's true aspect differs slightly.
+        var entry = _db?.Find(w.Game);
+        var aspect = entry is null
+            ? w.NativeClientSize
+            : entry.IsVertical ? new PixelSize(3, 4) : new PixelSize(4, 3);
+
+        _embedder.Embed(w.Hwnd, _ownerHwnd, _hostRect(), aspect);
         if (IsMuted)
             _ = ApplyMuteWithRetryAsync(w.Pid, true);
     }
