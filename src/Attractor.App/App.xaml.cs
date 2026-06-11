@@ -1,13 +1,15 @@
-﻿using System.Configuration;
-using System.Data;
 using System.Windows;
 
 namespace Attractor.App;
 
-/// <summary>
-/// Interaction logic for App.xaml
-/// </summary>
 public partial class App : Application
 {
-}
+    /// <summary>Raw CLI args, captured for spike/automation modes.</summary>
+    internal static string[] StartupArgs { get; private set; } = [];
 
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        StartupArgs = e.Args;
+        base.OnStartup(e);
+    }
+}
