@@ -66,59 +66,92 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ---- lifecycle --------------------------------------------------------------
 
-    public async Task InitializeAsync(IntPtr ownerHwnd, Func<PixelRect> hostRect)
+    public Task InitializeAsync(IntPtr ownerHwnd, Func<PixelRect> hostRect, bool forceRescan = false)
     {
         _ownerHwnd = ownerHwnd;
         _hostRect = hostRect;
+        return BuildAndStartAsync(forceRescan);
+    }
 
-        var mameExe = _config.Mame.ExePath;
+    private bool _building;
+
+    /// <summary>Builds (or rebuilds, for rescans) the catalog and starts a fresh engine.</summary>
+    private async Task BuildAndStartAsync(bool forceRescan)
+    {
+        if (_building)
+            return;
+        _building = true;
         try
         {
-            _db = await Task.Run(() => CatalogBuilder.BuildAsync(
-                mameExe, _paths.MachinesCacheFile, _paths.VerifyCacheFile,
-                new FileTagStore(_paths.BannedFile), new FileTagStore(_paths.FavoritesFile),
-                new Progress<ScanProgress>(p => _dispatcher.BeginInvoke(() =>
-                    StageMessage = $"scanning: {p.Stage} {p.Count}…")),
-                forceRescan: false, _cts.Token));
+            if (_engine is not null)
+            {
+                StageMessage = "STOPPING…";
+                await _engine.StopAsync();
+                _engine = null;
+            }
+
+            var mameExe = _config.Mame.ExePath;
+            StageMessage = forceRescan ? "RESCANNING…" : "LOADING CATALOG…";
+            try
+            {
+                _db = await Task.Run(() => CatalogBuilder.BuildAsync(
+                    mameExe, _paths.MachinesCacheFile, _paths.VerifyCacheFile,
+                    new FileTagStore(_paths.BannedFile), new FileTagStore(_paths.FavoritesFile),
+                    new Progress<ScanProgress>(p => _dispatcher.BeginInvoke(() =>
+                        StageMessage = $"SCANNING: {p.Stage} {p.Count}…")),
+                    forceRescan, _cts.Token));
+            }
+            catch (Exception ex)
+            {
+                StageMessage = $"catalog failed: {ex.Message}";
+                return;
+            }
+
+            if (_db.All.Count == 0)
+            {
+                StageMessage = "no eligible games found — check MAME's rompath / File → Rescan";
+                return;
+            }
+
+            _art = new ArtLocator(
+                Path.GetDirectoryName(mameExe)!, _config.Art.MarqueeDirs, _config.Art.SnapDirs);
+
+            var extraArgs = new List<string>(_config.Mame.ExtraArgs);
+            if (_config.Mame.VolumeAttenuation != 0)
+            {
+                extraArgs.Add("-volume");
+                extraArgs.Add(_config.Mame.VolumeAttenuation.ToString());
+            }
+
+            var engine = new RotationEngine(
+                _launcher, _db.RotationPool, _db.Banned, mameExe,
+                new RotationOptions { DwellSeconds = _config.Rotation.DwellSeconds },
+                extraArgs: extraArgs);
+
+            engine.GameChanged += g => _dispatcher.BeginInvoke(() => OnGameChanged(g));
+            engine.WindowReady += w => _dispatcher.BeginInvoke(() => OnWindowReady(w));
+            engine.GameFaulted += f => _dispatcher.BeginInvoke(() => OnGameFaulted(f));
+            engine.HoldChanged += held => _dispatcher.BeginInvoke(() => OnHoldChanged(held));
+            engine.StateChanged += s => _dispatcher.BeginInvoke(() => OnStateChanged(s));
+
+            _engine = engine;
+            _gamesShown = 0;
+            StageMessage = "STARTING ROTATION…";
+            _countdownTimer.Start();
+            _ = engine.StartAsync(_cts.Token);
+            _ = LoadHistoryAsync(mameExe);
         }
-        catch (Exception ex)
+        finally
         {
-            StageMessage = $"catalog failed: {ex.Message}";
-            return;
+            _building = false;
         }
-
-        if (_db.All.Count == 0)
-        {
-            StageMessage = "no eligible games found — check MAME's rompath / rerun the scan";
-            return;
-        }
-
-        _art = new ArtLocator(
-            Path.GetDirectoryName(mameExe)!, _config.Art.MarqueeDirs, _config.Art.SnapDirs);
-
-        var extraArgs = new List<string>(_config.Mame.ExtraArgs);
-        if (_config.Mame.VolumeAttenuation != 0)
-        {
-            extraArgs.Add("-volume");
-            extraArgs.Add(_config.Mame.VolumeAttenuation.ToString());
-        }
-
-        _engine = new RotationEngine(
-            _launcher, _db.RotationPool, _db.Banned, mameExe,
-            new RotationOptions { DwellSeconds = _config.Rotation.DwellSeconds },
-            extraArgs: extraArgs);
-
-        _engine.GameChanged += g => _dispatcher.BeginInvoke(() => OnGameChanged(g));
-        _engine.WindowReady += w => _dispatcher.BeginInvoke(() => OnWindowReady(w));
-        _engine.GameFaulted += f => _dispatcher.BeginInvoke(() => OnGameFaulted(f));
-        _engine.HoldChanged += held => _dispatcher.BeginInvoke(() => OnHoldChanged(held));
-        _engine.StateChanged += s => _dispatcher.BeginInvoke(() => OnStateChanged(s));
-
-        StageMessage = "STARTING ROTATION…";
-        _countdownTimer.Start();
-        _ = _engine.StartAsync(_cts.Token);
-        _ = LoadHistoryAsync(mameExe);
     }
+
+    [RelayCommand]
+    private Task Rescan() => BuildAndStartAsync(forceRescan: true);
+
+    [RelayCommand]
+    private void OpenConfigFolder() => System.Diagnostics.Process.Start("explorer.exe", _paths.Root);
 
     private async Task LoadHistoryAsync(string mameExe)
     {

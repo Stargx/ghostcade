@@ -1,0 +1,84 @@
+<Window x:Class="Attractor.App.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Attractor — setup" Height="560" Width="760" ResizeMode="NoResize"
+        Background="{StaticResource BgDeep}" WindowStartupLocation="CenterScreen">
+
+  <Border Style="{StaticResource NeonFrame}" Margin="18" Padding="30">
+    <Grid>
+
+      <!-- ============ page 1: locate mame ============ -->
+      <StackPanel x:Name="Page1">
+        <TextBlock Text="STEP 1 · FIND YOUR MAME" Style="{StaticResource PixelLabel}" FontSize="15"/>
+        <TextBlock Style="{StaticResource DimText}" Margin="0,16,0,0" FontSize="14">
+          Attractor drives your own MAME — any version from 0.147 to current.
+          Point it at mame.exe; ROMs come from MAME's own configuration.
+        </TextBlock>
+        <DockPanel Margin="0,26,0,0">
+          <Button DockPanel.Dock="Right" Content="BROWSE…" Padding="14,8" Margin="10,0,0,0"
+                  FontFamily="{StaticResource PixelFont}" FontSize="10" Click="BrowseMame_Click"/>
+          <TextBox x:Name="MamePathBox" FontSize="13" Padding="8,7" Background="#FF0B0B11"
+                   Foreground="Gainsboro" BorderBrush="{StaticResource PanelEdge}"
+                   TextChanged="MamePathBox_TextChanged"/>
+        </DockPanel>
+        <TextBlock x:Name="ProbeText" Style="{StaticResource DimText}" Margin="0,14,0,0" FontSize="12"
+                   Foreground="{StaticResource NeonCyan}"/>
+      </StackPanel>
+
+      <!-- ============ page 2: artwork ============ -->
+      <StackPanel x:Name="Page2" Visibility="Collapsed">
+        <TextBlock Text="STEP 2 · ARTWORK (OPTIONAL)" Style="{StaticResource PixelLabel}" FontSize="15"/>
+        <TextBlock Style="{StaticResource DimText}" Margin="0,16,0,0" FontSize="14">
+          Marquee art tops the cabinet; snapshots cover the brief blink between
+          games. Without them Attractor still works — you just get text instead.
+        </TextBlock>
+
+        <TextBlock Text="marquees folder" Style="{StaticResource DimText}" Margin="0,22,0,6" FontSize="12"/>
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="BROWSE…" Padding="14,8" Margin="10,0,0,0"
+                  FontFamily="{StaticResource PixelFont}" FontSize="10" Click="BrowseMarquees_Click"/>
+          <TextBox x:Name="MarqueeDirBox" FontSize="13" Padding="8,7" Background="#FF0B0B11"
+                   Foreground="Gainsboro" BorderBrush="{StaticResource PanelEdge}"/>
+        </DockPanel>
+
+        <TextBlock Text="snapshots folder" Style="{StaticResource DimText}" Margin="0,16,0,6" FontSize="12"/>
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="BROWSE…" Padding="14,8" Margin="10,0,0,0"
+                  FontFamily="{StaticResource PixelFont}" FontSize="10" Click="BrowseSnaps_Click"/>
+          <TextBox x:Name="SnapDirBox" FontSize="13" Padding="8,7" Background="#FF0B0B11"
+                   Foreground="Gainsboro" BorderBrush="{StaticResource PanelEdge}"/>
+        </DockPanel>
+
+        <TextBlock x:Name="ArtProbeText" Style="{StaticResource DimText}" Margin="0,18,0,0" FontSize="12"/>
+      </StackPanel>
+
+      <!-- ============ page 3: scan ============ -->
+      <StackPanel x:Name="Page3" Visibility="Collapsed">
+        <TextBlock Text="STEP 3 · SCAN YOUR COLLECTION" Style="{StaticResource PixelLabel}" FontSize="15"/>
+        <TextBlock Style="{StaticResource DimText}" Margin="0,16,0,0" FontSize="14">
+          One-time pass: Attractor reads MAME's machine list and verifies which
+          ROM sets you actually have. Over a network share this can take several
+          minutes — results are cached, every later start is instant.
+        </TextBlock>
+        <TextBlock x:Name="ScanProgressText" FontFamily="{StaticResource PixelFont}" FontSize="13"
+                   Foreground="{StaticResource Amber}" Margin="0,30,0,0" TextWrapping="Wrap"
+                   Text="READY WHEN YOU ARE"/>
+        <StackPanel Orientation="Horizontal" Margin="0,26,0,0">
+          <Button x:Name="ScanBtn" Content="START SCAN" Padding="18,10" FontFamily="{StaticResource PixelFont}"
+                  FontSize="11" Click="Scan_Click"/>
+          <Button x:Name="CancelScanBtn" Content="CANCEL" Padding="18,10" Margin="12,0,0,0" IsEnabled="False"
+                  FontFamily="{StaticResource PixelFont}" FontSize="11" Click="CancelScan_Click"/>
+        </StackPanel>
+      </StackPanel>
+
+      <!-- ============ nav ============ -->
+      <DockPanel VerticalAlignment="Bottom">
+        <Button x:Name="BackBtn" Content="◀ BACK" Padding="16,9" FontFamily="{StaticResource PixelFont}"
+                FontSize="10" Visibility="Hidden" Click="Back_Click"/>
+        <Button x:Name="NextBtn" Content="NEXT ▶" Padding="16,9" HorizontalAlignment="Right"
+                FontFamily="{StaticResource PixelFont}" FontSize="10" IsEnabled="False" Click="Next_Click"/>
+      </DockPanel>
+
+    </Grid>
+  </Border>
+</Window>

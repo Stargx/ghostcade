@@ -15,7 +15,8 @@ public sealed record MachineInfo(
     bool Runnable,
     string? CloneOf,
     DriverStatus Driver,
-    int Rotate);
+    int Rotate,
+    bool IsMechanical = false); // fruit/quiz machines etc; captured for a future filter
 
 /// <summary>A rotation-eligible game: listxml metadata joined with verify results.</summary>
 public sealed record GameEntry(

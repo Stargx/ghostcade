@@ -43,6 +43,7 @@ public sealed record AppConfig
         public string Hold { get; init; } = "Ctrl+Alt+Down";
         public string Ban { get; init; } = "Ctrl+Alt+B";
         public string Favorite { get; init; } = "Ctrl+Alt+F";
+        public string Mute { get; init; } = "Ctrl+Alt+M";
     }
 
     public sealed record WindowSection

@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Attractor.Core.Configuration;
 
@@ -10,6 +10,11 @@ public partial class App : Application
     /// <summary>Raw CLI args, captured for spike/automation modes.</summary>
     internal static string[] StartupArgs { get; private set; } = [];
 
+    private Mutex? _singleInstance;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
     protected override void OnStartup(StartupEventArgs e)
     {
         StartupArgs = e.Args;
@@ -19,6 +24,18 @@ public partial class App : Application
         if (e.Args.Length > 0 && e.Args[0] == "--spike")
         {
             new SpikeWindow().Show();
+            return;
+        }
+
+        // two instances would fight over hotkeys and the embedded window
+        _singleInstance = new Mutex(initiallyOwned: true, @"Local\Attractor.SingleInstance", out bool first);
+        if (!first)
+        {
+            var other = System.Diagnostics.Process.GetProcessesByName("Attractor")
+                .FirstOrDefault(p => p.Id != Environment.ProcessId && p.MainWindowHandle != IntPtr.Zero);
+            if (other is not null)
+                SetForegroundWindow(other.MainWindowHandle);
+            Shutdown(0);
             return;
         }
 
@@ -37,20 +54,16 @@ public partial class App : Application
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(config.Mame.ExePath) || !File.Exists(config.Mame.ExePath))
+        bool wantSetup = e.Args.Contains("--setup")
+            || string.IsNullOrWhiteSpace(config.Mame.ExePath)
+            || !File.Exists(config.Mame.ExePath);
+        if (wantSetup)
         {
-            // the proper first-run wizard arrives in M4; until then, hand-edit
-            ConfigStore.Save(paths.ConfigFile, config);
-            MessageBox.Show(
-                $"Point \"mame\" → \"exePath\" at your mame.exe in:\n\n{paths.ConfigFile}\n\n" +
-                "then start Attractor again. (The first-run wizard is coming soon.)",
-                "Attractor — set your MAME path", MessageBoxButton.OK, MessageBoxImage.Information);
-            Process.Start("explorer.exe", paths.Root);
-            Shutdown(1);
+            new SetupWindow(paths, config).Show();
             return;
         }
 
         var vm = new MainViewModel(config, paths);
-        new MainWindow(vm, paths).Show();
+        new MainWindow(vm, paths, config, forceRescan: e.Args.Contains("--rescan")).Show();
     }
 }

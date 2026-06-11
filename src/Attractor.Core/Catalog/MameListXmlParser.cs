@@ -34,6 +34,7 @@ public static class MameListXmlParser
 
             bool isBios = reader.GetAttribute("isbios") == "yes";
             bool isDevice = reader.GetAttribute("isdevice") == "yes";
+            bool isMechanical = reader.GetAttribute("ismechanical") == "yes";
             bool runnable = reader.GetAttribute("runnable") != "no";
             var cloneOf = reader.GetAttribute("cloneof");
 
@@ -92,7 +93,7 @@ public static class MameListXmlParser
             }
 
             yield return new MachineInfo(
-                name, description, year, manufacturer, isBios, isDevice, runnable, cloneOf, driver, rotate);
+                name, description, year, manufacturer, isBios, isDevice, runnable, cloneOf, driver, rotate, isMechanical);
         }
     }
 }
