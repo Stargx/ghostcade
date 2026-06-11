@@ -1,6 +1,8 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+  <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
   <!-- ============ palette ============ -->
   <Color x:Key="CyanColor">#FF00E0FF</Color>
   <Color x:Key="MagentaColor">#FFFF2FB4</Color>
@@ -179,6 +181,29 @@
                   <ScaleTransform ScaleX="0.93" ScaleY="0.93"/>
                 </Setter.Value>
               </Setter>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- invisible hit area over a button painted in the artwork -->
+  <Style x:Key="ArtButton" TargetType="Button">
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid Background="Transparent">
+            <Ellipse x:Name="Hover" Margin="16,2,16,58" Fill="#2EFFFFFF" Opacity="0" IsHitTestVisible="False"/>
+            <Ellipse x:Name="Press" Margin="16,2,16,58" Fill="#46000000" Opacity="0" IsHitTestVisible="False"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Press" Property="Opacity" Value="1"/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

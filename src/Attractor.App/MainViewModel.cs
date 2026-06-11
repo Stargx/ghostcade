@@ -51,6 +51,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private ImageSource? _marqueeImage;
     [ObservableProperty] private ImageSource? _maskImage;
     [ObservableProperty] private bool _isMuted;
+    [ObservableProperty] private bool _isHeld;
 
     private Dictionary<string, string> _history = new(StringComparer.Ordinal);
 
@@ -232,6 +233,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void OnHoldChanged(bool held)
     {
+        IsHeld = held;
         HoldLabel = held ? "RESUME" : "HOLD";
         HoldGlyph = held ? "" : ""; // play : pause
         UpdateCountdown();
