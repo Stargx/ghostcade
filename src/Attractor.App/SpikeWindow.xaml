@@ -1,0 +1,27 @@
+<Window x:Class="Attractor.App.SpikeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Attractor — embedding spike" Height="780" Width="1180"
+        Background="#FF101014">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#FF1A1A22" Padding="10">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="mame.exe" Foreground="#FF8A8A99" VerticalAlignment="Center" Margin="0,0,6,0"/>
+        <TextBox x:Name="MamePathBox" Width="400" VerticalAlignment="Center"
+                 Text="C:\mame\mame.exe"/>
+        <TextBlock Text="game" Foreground="#FF8A8A99" VerticalAlignment="Center" Margin="12,0,6,0"/>
+        <TextBox x:Name="GameBox" Width="110" VerticalAlignment="Center" Text="galaga"/>
+        <ComboBox x:Name="ModeBox" Width="100" Margin="12,0,0,0" VerticalAlignment="Center" SelectedIndex="0">
+          <ComboBoxItem Content="glue"/>
+          <ComboBoxItem Content="reparent"/>
+        </ComboBox>
+        <Button x:Name="LaunchBtn" Content="Launch + Embed" Margin="12,0,0,0" Padding="10,4" Click="LaunchBtn_Click"/>
+        <Button x:Name="KillBtn" Content="Kill" Margin="8,0,0,0" Padding="10,4" Click="KillBtn_Click"/>
+        <TextBlock x:Name="StatusText" Foreground="Gainsboro" VerticalAlignment="Center" Margin="16,0,0,0"
+                   Text="ready"/>
+      </StackPanel>
+    </Border>
+    <Border x:Name="HostRegion" Margin="16" Background="#FF06060A"
+            BorderBrush="#FF2A2A35" BorderThickness="1"/>
+  </DockPanel>
+</Window>

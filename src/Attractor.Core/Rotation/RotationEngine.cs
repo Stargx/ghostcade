@@ -223,7 +223,7 @@ public sealed class RotationEngine : IAsyncDisposable
 
         if (_options.SettleMs > 0)
             await Task.Delay(TimeSpan.FromMilliseconds(_options.SettleMs), _time, ct).ConfigureAwait(false);
-        WindowReady?.Invoke(new MameWindowReady(game, hwnd, _finder.GetClientSize(hwnd), chunkSeconds));
+        WindowReady?.Invoke(new MameWindowReady(game, proc.Pid, hwnd, _finder.GetClientSize(hwnd), chunkSeconds));
 
         var exitTask = proc.WaitForExitAsync(ct);
         var watchdog = Task.Delay(WatchdogFor(chunkSeconds), _time, ct);

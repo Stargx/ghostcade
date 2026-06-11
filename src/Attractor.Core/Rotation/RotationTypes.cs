@@ -21,7 +21,7 @@ public sealed record RotationOptions
 }
 
 /// <summary>A fresh MAME window for the current chunk, ready to be embedded by the host UI.</summary>
-public sealed record MameWindowReady(string Game, IntPtr Hwnd, PixelSize NativeClientSize, int ChunkSeconds);
+public sealed record MameWindowReady(string Game, int Pid, IntPtr Hwnd, PixelSize NativeClientSize, int ChunkSeconds);
 
 public sealed record GameFault(string Game, GameFaultKind Kind, FaultVerdict Verdict, int? ExitCode);
 
