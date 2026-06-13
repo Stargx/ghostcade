@@ -1,12 +1,14 @@
 <Window x:Class="Attractor.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Attractor" Height="1240" Width="1373" MinHeight="1020" MinWidth="1373" MaxWidth="1373"
+        Title="Attractor" Height="1240" Width="1373" MinHeight="640" MinWidth="1373" MaxWidth="1373"
         Background="#FF050507" WindowStartupLocation="CenterScreen">
 
-  <!-- The chrome is Steve's artwork, authored at a fixed 1341px content width.
-       The window resizes vertically only; middle_screen.jpg tiles to absorb
-       the stretch, exactly as the slices were designed. -->
+  <!-- Chrome is Steve's artwork (1341px-wide design). Two layout modes, chosen
+       by window height in code-behind: FULL (>=1080 tall) is the fixed cabinet;
+       SLIM (<1080) drops the right panel, relocates the countdown to a chip,
+       and lets the banner/buttons scale down (Viewboxes + star rows). One
+       shared HostRegion, so the embedded MAME window just re-glues on reflow. -->
 
   <DockPanel>
     <Menu DockPanel.Dock="Top" Background="Transparent" Foreground="{StaticResource TextDim}">
@@ -23,50 +25,76 @@
 
     <Grid Width="1341" HorizontalAlignment="Center">
       <Grid.RowDefinitions>
-        <RowDefinition Height="243"/>
-        <RowDefinition Height="*"/>
-        <RowDefinition Height="162"/>
+        <RowDefinition x:Name="BannerRow" Height="243"/>
+        <RowDefinition x:Name="StageRow" Height="*"/>
+        <RowDefinition x:Name="ButtonsRow" Height="162"/>
       </Grid.RowDefinitions>
 
-      <!-- ============ marquee banner (art) ============ -->
+      <!-- ============ marquee banner ============ -->
       <Grid Grid.Row="0">
-        <Image Source="pack://application:,,,/assets/img/top_banner.jpg" Stretch="Fill"/>
-        <Grid Margin="210,36,205,36">
-          <!-- text marquee only when a game has no marquee art -->
-          <TextBlock Text="{Binding Title}"
-                     FontFamily="{StaticResource PixelFont}" FontSize="26"
-                     Foreground="{StaticResource Amber}" LineHeight="38"
-                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                     TextAlignment="Center" TextWrapping="Wrap" Margin="20,0">
-            <TextBlock.Effect>
-              <DropShadowEffect Color="{StaticResource AmberColor}" BlurRadius="18" ShadowDepth="0" Opacity="0.9"/>
-            </TextBlock.Effect>
-            <TextBlock.Style>
-              <Style TargetType="TextBlock">
-                <Setter Property="Visibility" Value="Collapsed"/>
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding MarqueeImage}" Value="{x:Null}">
-                    <Setter Property="Visibility" Value="Visible"/>
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </TextBlock.Style>
-          </TextBlock>
-          <Image Source="{Binding MarqueeImage}" Stretch="Uniform" Margin="6"
-                 RenderOptions.BitmapScalingMode="HighQuality"/>
-        </Grid>
+        <Viewbox Stretch="Uniform" HorizontalAlignment="Left" VerticalAlignment="Center">
+          <Grid Width="1341" Height="243">
+            <Image Source="pack://application:,,,/assets/img/top_banner.jpg" Stretch="Fill"/>
+            <Grid Margin="210,36,205,36">
+              <!-- text marquee only when a game has no marquee art -->
+              <TextBlock Text="{Binding Title}"
+                         FontFamily="{StaticResource PixelFont}" FontSize="26"
+                         Foreground="{StaticResource Amber}" LineHeight="38"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextAlignment="Center" TextWrapping="Wrap" Margin="20,0">
+                <TextBlock.Effect>
+                  <DropShadowEffect Color="{StaticResource AmberColor}" BlurRadius="18" ShadowDepth="0" Opacity="0.9"/>
+                </TextBlock.Effect>
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding MarqueeImage}" Value="{x:Null}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+              <Image Source="{Binding MarqueeImage}" Stretch="Uniform" Margin="6"
+                     RenderOptions.BitmapScalingMode="HighQuality"/>
+            </Grid>
+          </Grid>
+        </Viewbox>
+
+        <!-- slim-mode countdown chip (hidden in full mode; the panel shows it there) -->
+        <Border x:Name="CountdownChip" Visibility="Collapsed"
+                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,24,0"
+                Background="#CC0B0B11" BorderBrush="{StaticResource NeonMagenta}" BorderThickness="2"
+                CornerRadius="8" Padding="18,8">
+          <Border.Effect>
+            <DropShadowEffect Color="{StaticResource MagentaColor}" BlurRadius="14" ShadowDepth="0" Opacity="0.6"/>
+          </Border.Effect>
+          <StackPanel>
+            <TextBlock Text="{Binding CountdownLabel}" FontFamily="{StaticResource PixelFont}" FontSize="11"
+                       Foreground="{StaticResource NeonMagenta}" HorizontalAlignment="Center"/>
+            <TextBlock Text="{Binding CountdownValue}" FontFamily="{StaticResource LedFont}" FontWeight="Bold"
+                       FontSize="34" Foreground="{StaticResource Led}" HorizontalAlignment="Center" Margin="0,4,0,0">
+              <TextBlock.Effect>
+                <DropShadowEffect Color="{StaticResource LedColor}" BlurRadius="14" ShadowDepth="0" Opacity="0.9"/>
+              </TextBlock.Effect>
+            </TextBlock>
+          </StackPanel>
+        </Border>
       </Grid>
 
       <!-- ============ stage row ============ -->
       <Grid Grid.Row="1">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="941"/>
-          <ColumnDefinition Width="9"/>
-          <ColumnDefinition Width="391"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition x:Name="GapColumn" Width="9"/>
+          <ColumnDefinition x:Name="PanelColumn" Width="391"/>
         </Grid.ColumnDefinitions>
 
-        <!-- CRT screen built from three art slices; middle tiles vertically -->
-        <Grid Grid.Column="0">
+        <!-- CRT screen built from three art slices; middle tiles vertically.
+             Fixed 941 wide and centred, so collapsing the panel just gives it
+             more dark breathing room rather than stretching the bezel. -->
+        <Grid Grid.Column="0" Width="941" HorizontalAlignment="Center">
           <Grid.RowDefinitions>
             <RowDefinition Height="256"/>
             <RowDefinition Height="*"/>
@@ -93,7 +121,7 @@
         </Grid>
 
         <!-- info panel art, top aligned, with the text stack overlaid -->
-        <Grid Grid.Column="2" VerticalAlignment="Top" Height="732">
+        <Grid x:Name="RightPanel" Grid.Column="2" VerticalAlignment="Top" Height="732">
           <Image Source="pack://application:,,,/assets/img/right_panel.jpg" Stretch="Fill"/>
           <StackPanel Margin="34,40,34,40">
             <TextBlock Text="{Binding Title}" Style="{StaticResource PixelTitle}"/>
@@ -165,39 +193,43 @@
         </Grid>
       </Grid>
 
-      <!-- ============ transport (art + invisible hit areas) ============ -->
+      <!-- ============ transport (art + invisible hit areas, scales as one) ============ -->
       <Grid Grid.Row="2">
-        <Image Source="pack://application:,,,/assets/img/bottom_buttons.jpg" Stretch="Fill"/>
-        <Canvas>
-          <Button Style="{StaticResource ArtButton}" Command="{Binding PreviousCommand}"
-                  Canvas.Left="71" Canvas.Top="2" Width="144" Height="156" ToolTip="Previous (Ctrl+Alt+Left)"/>
-          <Button Style="{StaticResource ArtButton}" Command="{Binding HoldCommand}"
-                  Canvas.Left="279" Canvas.Top="2" Width="144" Height="156" ToolTip="Hold (Ctrl+Alt+Down)"/>
-          <Button Style="{StaticResource ArtButton}" Command="{Binding SkipCommand}"
-                  Canvas.Left="495" Canvas.Top="2" Width="144" Height="156" ToolTip="Skip (Ctrl+Alt+Right)"/>
-          <Button Style="{StaticResource ArtButton}" Command="{Binding BanCommand}"
-                  Canvas.Left="703" Canvas.Top="2" Width="144" Height="156" ToolTip="Ban (Ctrl+Alt+B)"/>
-          <Button Style="{StaticResource ArtButton}" Command="{Binding FavoriteCommand}"
-                  Canvas.Left="911" Canvas.Top="2" Width="144" Height="156" ToolTip="Favourite (Ctrl+Alt+F)"/>
-          <Button Style="{StaticResource ArtButton}" Command="{Binding MuteCommand}"
-                  Canvas.Left="1119" Canvas.Top="2" Width="144" Height="156" ToolTip="Mute (Ctrl+Alt+M)"/>
+        <Viewbox Stretch="Uniform">
+          <Grid Width="1341" Height="162">
+            <Image Source="pack://application:,,,/assets/img/bottom_buttons.jpg" Stretch="Fill"/>
+            <Canvas>
+              <Button Style="{StaticResource ArtButton}" Command="{Binding PreviousCommand}"
+                      Canvas.Left="71" Canvas.Top="2" Width="144" Height="156" ToolTip="Previous (Ctrl+Alt+Left)"/>
+              <Button Style="{StaticResource ArtButton}" Command="{Binding HoldCommand}"
+                      Canvas.Left="279" Canvas.Top="2" Width="144" Height="156" ToolTip="Hold (Ctrl+Alt+Down)"/>
+              <Button Style="{StaticResource ArtButton}" Command="{Binding SkipCommand}"
+                      Canvas.Left="495" Canvas.Top="2" Width="144" Height="156" ToolTip="Skip (Ctrl+Alt+Right)"/>
+              <Button Style="{StaticResource ArtButton}" Command="{Binding BanCommand}"
+                      Canvas.Left="703" Canvas.Top="2" Width="144" Height="156" ToolTip="Ban (Ctrl+Alt+B)"/>
+              <Button Style="{StaticResource ArtButton}" Command="{Binding FavoriteCommand}"
+                      Canvas.Left="911" Canvas.Top="2" Width="144" Height="156" ToolTip="Favourite (Ctrl+Alt+F)"/>
+              <Button Style="{StaticResource ArtButton}" Command="{Binding MuteCommand}"
+                      Canvas.Left="1119" Canvas.Top="2" Width="144" Height="156" ToolTip="Mute (Ctrl+Alt+M)"/>
 
-          <!-- state overlays on the painted buttons -->
-          <Ellipse Canvas.Left="297" Canvas.Top="4" Width="108" Height="104" Stroke="{StaticResource NeonMagenta}"
-                   StrokeThickness="3" IsHitTestVisible="False"
-                   Visibility="{Binding IsHeld, Converter={StaticResource BoolToVis}}">
-            <Ellipse.Effect>
-              <DropShadowEffect Color="{StaticResource MagentaColor}" BlurRadius="14" ShadowDepth="0" Opacity="0.9"/>
-            </Ellipse.Effect>
-          </Ellipse>
-          <TextBlock Canvas.Left="1163" Canvas.Top="30" Text="&#xE74F;" FontFamily="{StaticResource Glyphs}"
-                     FontSize="42" Foreground="#FFFF5048" IsHitTestVisible="False"
-                     Visibility="{Binding IsMuted, Converter={StaticResource BoolToVis}}">
-            <TextBlock.Effect>
-              <DropShadowEffect Color="#FF000000" BlurRadius="8" ShadowDepth="0" Opacity="0.9"/>
-            </TextBlock.Effect>
-          </TextBlock>
-        </Canvas>
+              <!-- state overlays on the painted buttons -->
+              <Ellipse Canvas.Left="297" Canvas.Top="4" Width="108" Height="104" Stroke="{StaticResource NeonMagenta}"
+                       StrokeThickness="3" IsHitTestVisible="False"
+                       Visibility="{Binding IsHeld, Converter={StaticResource BoolToVis}}">
+                <Ellipse.Effect>
+                  <DropShadowEffect Color="{StaticResource MagentaColor}" BlurRadius="14" ShadowDepth="0" Opacity="0.9"/>
+                </Ellipse.Effect>
+              </Ellipse>
+              <TextBlock Canvas.Left="1163" Canvas.Top="30" Text="&#xE74F;" FontFamily="{StaticResource Glyphs}"
+                         FontSize="42" Foreground="#FFFF5048" IsHitTestVisible="False"
+                         Visibility="{Binding IsMuted, Converter={StaticResource BoolToVis}}">
+                <TextBlock.Effect>
+                  <DropShadowEffect Color="#FF000000" BlurRadius="8" ShadowDepth="0" Opacity="0.9"/>
+                </TextBlock.Effect>
+              </TextBlock>
+            </Canvas>
+          </Grid>
+        </Viewbox>
       </Grid>
     </Grid>
   </DockPanel>

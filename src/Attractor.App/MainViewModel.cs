@@ -37,14 +37,12 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _showMask;
 
     // Portrait games are height-bound; the artwork's glass sits a little below
-    // centre, so nudge vertical games down to clear the top neon frame.
-    private const int PortraitNudgeDip = 25;
+    // centre, so nudge vertical games down to clear the top neon frame. Kept as
+    // a fraction of host height so it scales with the window / layout mode.
+    private const double PortraitNudgeFraction = 0.036;
     // Once the live window is up it covers the centre — drop the snapshot so it
     // can't bleed past the sides of games that run smaller than their snap.
     private const double MaskClearDelaySeconds = 2;
-
-    /// <summary>Physical pixels per DIP on the current monitor; set by the window.</summary>
-    public double DeviceScaleY { get; set; } = 1.0;
 
     [ObservableProperty] private string _title = "Attractor";
     [ObservableProperty] private string _year = "";
@@ -232,7 +230,7 @@ public sealed partial class MainViewModel : ObservableObject
     private PixelRect ApplyOrientationNudge(PixelRect host)
     {
         if (!_currentVertical) return host;
-        int dy = (int)Math.Round(PortraitNudgeDip * DeviceScaleY);
+        int dy = (int)Math.Round(host.Height * PortraitNudgeFraction);
         return host with { Y = host.Y + dy };
     }
 
