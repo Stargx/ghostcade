@@ -80,6 +80,7 @@ public partial class MainWindow : Window
             return default;
         var origin = HostRegion.PointToScreen(new Point(0, 0)); // physical px under PMv2
         var m = target.TransformToDevice;
+        _vm.DeviceScaleY = m.M22; // keep the portrait nudge in true pixels
         return new PixelRect(
             (int)Math.Round(origin.X),
             (int)Math.Round(origin.Y),

@@ -30,6 +30,18 @@ public sealed partial class MainViewModel : ObservableObject
     private int _currentPid;
     private DateTimeOffset _gameDeadline;
     private int _gamesShown;
+    private bool _currentVertical;
+    private bool _showMask;
+
+    // Portrait games are height-bound; the artwork's glass sits a little below
+    // centre, so nudge vertical games down to clear the top neon frame.
+    private const int PortraitNudgeDip = 50;
+    // Once the live window is up it covers the centre — drop the snapshot so it
+    // can't bleed past the sides of games that run smaller than their snap.
+    private const double MaskClearDelaySeconds = 2;
+
+    /// <summary>Physical pixels per DIP on the current monitor; set by the window.</summary>
+    public double DeviceScaleY { get; set; } = 1.0;
 
     [ObservableProperty] private string _title = "Attractor";
     [ObservableProperty] private string _year = "";
@@ -174,7 +186,14 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Called by the window whenever the host region's physical rect changes.</summary>
-    public void OnHostRectChanged(PixelRect rect) => _embedder.UpdateBounds(rect);
+    public void OnHostRectChanged(PixelRect rect) => _embedder.UpdateBounds(ApplyOrientationNudge(rect));
+
+    private PixelRect ApplyOrientationNudge(PixelRect host)
+    {
+        if (!_currentVertical) return host;
+        int dy = (int)Math.Round(PortraitNudgeDip * DeviceScaleY);
+        return host with { Y = host.Y + dy };
+    }
 
     // ---- engine events (UI thread) ---------------------------------------------
 
@@ -194,6 +213,7 @@ public sealed partial class MainViewModel : ObservableObject
         StageMessage = "";
         StatusMessage = "";
         AboutText = _history.GetValueOrDefault(game, "");
+        _showMask = true; // show the snap during this game's launch gap
 
         var marqueePath = _art!.FindMarquee(game);
         var snapPath = _art.FindSnap(game);
@@ -207,7 +227,9 @@ public sealed partial class MainViewModel : ObservableObject
         if (_engine?.CurrentGame == game) // a skip may have raced us
         {
             MarqueeImage = marquee;
-            MaskImage = snap;
+            // guard the clear-race: a slow share load mustn't re-show the snap
+            // after ClearMaskAfterAsync has already dropped it
+            if (_showMask) MaskImage = snap;
         }
     }
 
@@ -221,13 +243,25 @@ public sealed partial class MainViewModel : ObservableObject
         // left portrait games ~20% undersized). MAME letterboxes internally if
         // a particular game's true aspect differs slightly.
         var entry = _db?.Find(w.Game);
+        _currentVertical = entry?.IsVertical ?? false;
         var aspect = entry is null
             ? w.NativeClientSize
             : entry.IsVertical ? new PixelSize(3, 4) : new PixelSize(4, 3);
 
-        _embedder.Embed(w.Hwnd, _ownerHwnd, _hostRect(), aspect);
+        _embedder.Embed(w.Hwnd, _ownerHwnd, ApplyOrientationNudge(_hostRect()), aspect);
         if (IsMuted)
             _ = ApplyMuteWithRetryAsync(w.Pid, true);
+        _ = ClearMaskAfterAsync(w.Game);
+    }
+
+    private async Task ClearMaskAfterAsync(string game)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(MaskClearDelaySeconds));
+        if (_engine?.CurrentGame == game)
+        {
+            _showMask = false;
+            MaskImage = null;
+        }
     }
 
     private void OnGameFaulted(GameFault f)
