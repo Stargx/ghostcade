@@ -23,16 +23,16 @@
       </MenuItem>
     </Menu>
 
-    <Grid Width="1341" HorizontalAlignment="Center">
+    <Grid x:Name="Root" Width="1341" HorizontalAlignment="Center">
       <Grid.RowDefinitions>
         <RowDefinition x:Name="BannerRow" Height="243"/>
         <RowDefinition x:Name="StageRow" Height="*"/>
         <RowDefinition x:Name="ButtonsRow" Height="162"/>
       </Grid.RowDefinitions>
 
-      <!-- ============ marquee banner ============ -->
-      <Grid Grid.Row="0">
-        <Viewbox Stretch="Uniform" HorizontalAlignment="Left" VerticalAlignment="Center">
+      <!-- ============ marquee banner (+ slim chip), centred as one group ============ -->
+      <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Stretch">
+        <Viewbox Stretch="Uniform" VerticalAlignment="Center">
           <Grid Width="1341" Height="243">
             <Image Source="pack://application:,,,/assets/img/top_banner.jpg" Stretch="Fill"/>
             <Grid Margin="210,36,205,36">
@@ -62,9 +62,10 @@
           </Grid>
         </Viewbox>
 
-        <!-- slim-mode countdown chip (hidden in full mode; the panel shows it there) -->
+        <!-- slim-mode countdown chip, directly to the right of the banner
+             (collapsed in full mode; the info panel shows the countdown there) -->
         <Border x:Name="CountdownChip" Visibility="Collapsed"
-                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,24,0"
+                VerticalAlignment="Center" Margin="18,0,0,0"
                 Background="#CC0B0B11" BorderBrush="{StaticResource NeonMagenta}" BorderThickness="2"
                 CornerRadius="8" Padding="18,8">
           <Border.Effect>
@@ -81,7 +82,7 @@
             </TextBlock>
           </StackPanel>
         </Border>
-      </Grid>
+      </StackPanel>
 
       <!-- ============ stage row ============ -->
       <Grid Grid.Row="1">

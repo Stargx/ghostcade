@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     // threshold (go slim under 1080 tall, return to full only once back over 1120).
     private const double SlimEnterHeight = 1080;
     private const double SlimExitHeight = 1120;
+    private const double SlimMinWidth = 965; // ~ game-screen width + chrome
     private bool? _slim;
 
     public MainWindow(MainViewModel vm, AppPaths paths, AppConfig config, bool forceRescan = false)
@@ -98,6 +99,12 @@ public partial class MainWindow : Window
             PanelColumn.Width = new GridLength(0);
             RightPanel.Visibility = Visibility.Collapsed;
             CountdownChip.Visibility = Visibility.Visible;
+            // let the cabinet stretch and the window shrink down to ~the game
+            // screen width (it no longer needs room for the full-width banner)
+            Root.Width = double.NaN;
+            Root.HorizontalAlignment = HorizontalAlignment.Stretch;
+            MaxWidth = 1373;
+            MinWidth = SlimMinWidth;
         }
         else
         {
@@ -108,6 +115,11 @@ public partial class MainWindow : Window
             PanelColumn.Width = new GridLength(391);
             RightPanel.Visibility = Visibility.Visible;
             CountdownChip.Visibility = Visibility.Collapsed;
+            // full cabinet needs its fixed banner width; lock it
+            Root.Width = 1341;
+            Root.HorizontalAlignment = HorizontalAlignment.Center;
+            MinWidth = 1373;
+            MaxWidth = 1373;
         }
 
         // re-fit the embedded MAME window once the reflow has settled
