@@ -35,7 +35,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     // Portrait games are height-bound; the artwork's glass sits a little below
     // centre, so nudge vertical games down to clear the top neon frame.
-    private const int PortraitNudgeDip = 50;
+    private const int PortraitNudgeDip = 25;
     // Once the live window is up it covers the centre — drop the snapshot so it
     // can't bleed past the sides of games that run smaller than their snap.
     private const double MaskClearDelaySeconds = 2;
