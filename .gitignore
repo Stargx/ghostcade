@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # Local-only MAME builds for embedding/compat testing (never committed)
 .local/
+
+# release build output
+publish/
+installer/Output/

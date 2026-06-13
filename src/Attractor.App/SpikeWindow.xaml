@@ -8,7 +8,7 @@
       <StackPanel Orientation="Horizontal">
         <TextBlock Text="mame.exe" Foreground="#FF8A8A99" VerticalAlignment="Center" Margin="0,0,6,0"/>
         <TextBox x:Name="MamePathBox" Width="400" VerticalAlignment="Center"
-                 Text="C:\mame\mame.exe"/>
+                 Text=""/>
         <TextBlock Text="game" Foreground="#FF8A8A99" VerticalAlignment="Center" Margin="12,0,6,0"/>
         <TextBox x:Name="GameBox" Width="110" VerticalAlignment="Center" Text="galaga"/>
         <ComboBox x:Name="ModeBox" Width="100" Margin="12,0,0,0" VerticalAlignment="Center" SelectedIndex="0">

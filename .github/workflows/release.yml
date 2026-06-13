@@ -1,0 +1,50 @@
+name: Release
+
+# Tag a commit (e.g. v0.1.0) and push the tag to cut a release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version from tag
+        id: ver
+        shell: pwsh
+        run: "echo \"version=$($env:GITHUB_REF_NAME -replace '^v','')\" >> $env:GITHUB_OUTPUT"
+
+      - name: Test
+        run: dotnet test Attractor.slnx -c Release
+
+      - name: Publish (framework-dependent, for the installer)
+        run: dotnet publish src/Attractor.App -c Release -o publish/fdd
+
+      - name: Publish (self-contained, for the portable zip)
+        run: dotnet publish src/Attractor.App -c Release -r win-x64 --self-contained -o publish/sc
+
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path publish/sc/* -DestinationPath "Attractor-${{ steps.ver.outputs.version }}-portable.zip"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} /DPublishDir=..\publish\fdd installer\attractor.iss'
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/Output/*.exe
+            Attractor-*-portable.zip
+          generate_release_notes: true
