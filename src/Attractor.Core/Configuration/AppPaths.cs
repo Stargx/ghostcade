@@ -32,6 +32,7 @@ public sealed class AppPaths
     public string BannedFile => Path.Combine(Root, "banned.txt");
     public string FavoritesFile => Path.Combine(Root, "favorites.txt");
     public string PlacementFile => Path.Combine(Root, "placement.json");
+    public string RotationStateFile => Path.Combine(Root, "rotation-state.json");
     public string LogsDir => Path.Combine(Root, "logs");
 
     private static string LegacyRoot =>

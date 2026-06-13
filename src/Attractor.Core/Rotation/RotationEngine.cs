@@ -43,7 +43,9 @@ public sealed class RotationEngine : IAsyncDisposable
         IGameWindowFinder? finder = null,
         TimeProvider? time = null,
         Random? random = null,
-        IReadOnlyList<string>? extraArgs = null)
+        IReadOnlyList<string>? extraArgs = null,
+        IEnumerable<string>? savedBagQueue = null,
+        Action<IReadOnlyList<string>>? onBagChanged = null)
     {
         _launcher = launcher;
         _poolProvider = poolProvider;
@@ -53,9 +55,12 @@ public sealed class RotationEngine : IAsyncDisposable
         _finder = finder ?? new GameWindowFinder();
         _time = time ?? TimeProvider.System;
         _extraArgs = extraArgs;
-        _bag = new ShuffleBag(poolProvider, random);
+        _onBagChanged = onBagChanged;
+        _bag = new ShuffleBag(poolProvider, random, savedBagQueue);
         _faults = new FaultPolicy(_time);
     }
+
+    private readonly Action<IReadOnlyList<string>>? _onBagChanged;
 
     public RotationState State { get; private set; } = RotationState.Stopped;
     public string? CurrentGame { get; private set; }
@@ -162,7 +167,10 @@ public sealed class RotationEngine : IAsyncDisposable
                     return replay;
                 var fresh = _bag.Draw(Excluded);
                 if (fresh is not null)
+                {
                     _history.Append(fresh);
+                    _onBagChanged?.Invoke(_bag.Snapshot()); // persist cycle progress
+                }
                 return fresh;
         }
     }

@@ -40,6 +40,40 @@ public class ShuffleBagTests
     }
 
     [Fact]
+    public void Snapshot_and_restore_resume_the_cycle_without_repeating()
+    {
+        string[] pool = ["a", "b", "c", "d", "e"];
+
+        // run 1: draw two, then "quit" and snapshot the remainder
+        var bag1 = new ShuffleBag(() => pool, new Random(99));
+        var drawn = new List<string> { bag1.Draw()!, bag1.Draw()! };
+        var saved = bag1.Snapshot();
+        Assert.Equal(3, saved.Count); // 5 - 2 dealt
+
+        // run 2: restore the saved queue and finish the cycle
+        var bag2 = new ShuffleBag(() => pool, new Random(7), initialQueue: saved);
+        for (int i = 0; i < 3; i++)
+            drawn.Add(bag2.Draw()!);
+
+        // the whole pool was seen exactly once across the "restart" — no repeats,
+        // and the tail games (which a fresh reshuffle each run would never reach)
+        // are guaranteed to appear
+        Assert.Equal(pool.ToHashSet(), drawn.ToHashSet());
+        Assert.Equal(5, drawn.Count);
+    }
+
+    [Fact]
+    public void Restored_queue_skips_games_no_longer_in_the_pool()
+    {
+        string[] pool = ["a", "b"]; // "gone" was saved but has left the catalog
+        var bag = new ShuffleBag(() => pool, new Random(1), initialQueue: ["gone", "a"]);
+        // caller filters the saved queue to the pool before restoring, but even a
+        // stale entry that slips through is simply dealt then never seen again
+        var first = bag.Draw(g => g == "gone"); // exclusion stands in for "not in pool"
+        Assert.NotEqual("gone", first);
+    }
+
+    [Fact]
     public void Pool_changes_apply_at_refill()
     {
         var pool = new List<string> { "a" };

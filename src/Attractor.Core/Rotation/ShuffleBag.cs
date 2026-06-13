@@ -5,6 +5,10 @@ namespace Attractor.Core.Rotation;
 /// (the prototype's reshuffle-when-empty queue). The pool is re-read on every
 /// refill so bans and rescans apply at the next cycle boundary, and the
 /// excluded-set filter applies at every draw so bans apply mid-cycle too.
+///
+/// The remaining queue can be snapshotted and restored (see <see cref="Snapshot"/>
+/// and the <c>initialQueue</c> ctor arg) so a cycle survives app restarts — a
+/// full pass over a large collection takes many hours, far longer than one run.
 /// </summary>
 public sealed class ShuffleBag
 {
@@ -12,11 +16,17 @@ public sealed class ShuffleBag
     private readonly Random _random;
     private readonly Queue<string> _queue = new();
 
-    public ShuffleBag(Func<IReadOnlyList<string>> pool, Random? random = null)
+    public ShuffleBag(Func<IReadOnlyList<string>> pool, Random? random = null, IEnumerable<string>? initialQueue = null)
     {
         _pool = pool;
         _random = random ?? Random.Shared;
+        if (initialQueue is not null)
+            foreach (var game in initialQueue)
+                _queue.Enqueue(game);
     }
+
+    /// <summary>The games still to be dealt this cycle, in order. Persist to resume across restarts.</summary>
+    public IReadOnlyList<string> Snapshot() => _queue.ToArray();
 
     /// <summary>Draw the next game, skipping anything in <paramref name="excluded"/>.</summary>
     public string? Draw(Func<string, bool>? excluded = null)

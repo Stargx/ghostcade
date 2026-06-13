@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Attractor.Core.Art;
@@ -136,10 +137,21 @@ public sealed partial class MainViewModel : ObservableObject
                 extraArgs.Add(_config.Mame.VolumeAttenuation.ToString());
             }
 
+            // resume the shuffle cycle across restarts (a full pass is many
+            // hours), filtered to games still in the catalog
+            IReadOnlyList<string>? savedQueue = null;
+            if (LoadBagState() is { } saved)
+            {
+                var eligible = _db.All.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+                savedQueue = saved.Where(eligible.Contains).ToArray();
+            }
+
             var engine = new RotationEngine(
                 _launcher, _db.RotationPool, _db.Banned, mameExe,
                 new RotationOptions { DwellSeconds = _config.Rotation.DwellSeconds },
-                extraArgs: extraArgs);
+                extraArgs: extraArgs,
+                savedBagQueue: savedQueue,
+                onBagChanged: SaveBagState);
 
             engine.GameChanged += g => _dispatcher.BeginInvoke(() => OnGameChanged(g));
             engine.WindowReady += w => _dispatcher.BeginInvoke(() => OnWindowReady(w));
@@ -165,6 +177,28 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void OpenConfigFolder() => System.Diagnostics.Process.Start("explorer.exe", _paths.Root);
+
+    // Persisted shuffle-cycle progress (called on the engine loop thread after
+    // each fresh draw). Writing to the local data dir is cheap and infrequent.
+    private void SaveBagState(IReadOnlyList<string> remaining)
+    {
+        try { AtomicFile.WriteAllText(_paths.RotationStateFile, JsonSerializer.Serialize(remaining)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* non-fatal */ }
+    }
+
+    private string[]? LoadBagState()
+    {
+        try
+        {
+            return File.Exists(_paths.RotationStateFile)
+                ? JsonSerializer.Deserialize<string[]>(File.ReadAllText(_paths.RotationStateFile))
+                : null;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     private async Task LoadHistoryAsync(string mameExe)
     {
