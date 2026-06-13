@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Interop;
 using Attractor.App.Hotkeys;
 using Attractor.Core.Configuration;
+using Attractor.Core.Diagnostics;
 using Attractor.Core.Windowing;
 
 namespace Attractor.App;
@@ -55,7 +56,11 @@ public partial class MainWindow : Window
         _hotkeys.Register(hk.Favorite, () => _vm.FavoriteCommand.Execute(null));
         _hotkeys.Register(hk.Mute, () => _vm.MuteCommand.Execute(null));
         if (_hotkeys.Failures.Count > 0)
-            _vm.StatusMessage = "hotkeys unavailable: " + string.Join(", ", _hotkeys.Failures);
+        {
+            var msg = "hotkeys unavailable: " + string.Join(", ", _hotkeys.Failures);
+            _vm.StatusMessage = msg;
+            App.Log.Warn(msg);
+        }
     }
 
     private void WireGlue()

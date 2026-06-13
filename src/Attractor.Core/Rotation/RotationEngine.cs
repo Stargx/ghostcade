@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Threading.Channels;
 using Attractor.Core.Catalog;
+using Attractor.Core.Diagnostics;
 using Attractor.Core.Mame;
 
 namespace Attractor.Core.Rotation;
@@ -20,6 +21,7 @@ public sealed class RotationEngine : IAsyncDisposable
     private readonly string _mameExePath;
     private readonly IReadOnlyList<string>? _extraArgs;
     private readonly TimeProvider _time;
+    private readonly ILog _log;
 
     private readonly Channel<EngineCommand> _commands = Channel.CreateUnbounded<EngineCommand>();
     private readonly ShuffleBag _bag;
@@ -45,7 +47,8 @@ public sealed class RotationEngine : IAsyncDisposable
         Random? random = null,
         IReadOnlyList<string>? extraArgs = null,
         IEnumerable<string>? savedBagQueue = null,
-        Action<IReadOnlyList<string>>? onBagChanged = null)
+        Action<IReadOnlyList<string>>? onBagChanged = null,
+        ILog? log = null)
     {
         _launcher = launcher;
         _poolProvider = poolProvider;
@@ -56,6 +59,7 @@ public sealed class RotationEngine : IAsyncDisposable
         _time = time ?? TimeProvider.System;
         _extraArgs = extraArgs;
         _onBagChanged = onBagChanged;
+        _log = log ?? NullLog.Instance;
         _bag = new ShuffleBag(poolProvider, random, savedBagQueue);
         _faults = new FaultPolicy(_time);
     }
@@ -105,6 +109,7 @@ public sealed class RotationEngine : IAsyncDisposable
     private async Task RunLoopAsync(CancellationToken shutdown)
     {
         SetState(RotationState.Running);
+        _log.Info($"rotation started (dwell {_options.DwellSeconds}s, pool {_poolProvider().Count})");
         try
         {
             while (!shutdown.IsCancellationRequested)
@@ -112,11 +117,13 @@ public sealed class RotationEngine : IAsyncDisposable
                 var game = NextGame();
                 if (game is null)
                 {
+                    _log.Error("no game available to draw (pool empty or all excluded) — faulting");
                     SetState(RotationState.Faulted);
                     return;
                 }
 
                 CurrentGame = game;
+                _log.Info($"now showing: {game}");
                 GameChanged?.Invoke(game);
 
                 var outcome = await PlayGameAsync(game, shutdown).ConfigureAwait(false);
@@ -205,6 +212,7 @@ public sealed class RotationEngine : IAsyncDisposable
     private ChunkResult Fault(string game, GameFaultKind kind, int? exitCode)
     {
         _lastVerdict = _faults.RecordFault(game);
+        _log.Warn($"fault: {game} {kind}{(exitCode is { } c ? $" exit={c}" : "")} -> {_lastVerdict}");
         GameFaulted?.Invoke(new GameFault(game, kind, _lastVerdict, exitCode));
         return ChunkResult.Faulted;
     }
@@ -302,6 +310,7 @@ public sealed class RotationEngine : IAsyncDisposable
     {
         if (State == state) return;
         State = state;
+        _log.Log(state == RotationState.Faulted ? LogLevel.Error : LogLevel.Info, $"state -> {state}");
         StateChanged?.Invoke(state);
     }
 }

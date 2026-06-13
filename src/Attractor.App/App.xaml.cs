@@ -1,7 +1,9 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Threading;
 using Attractor.Core.Configuration;
+using Attractor.Core.Diagnostics;
 
 namespace Attractor.App;
 
@@ -9,6 +11,9 @@ public partial class App : Application
 {
     /// <summary>Raw CLI args, captured for spike/automation modes.</summary>
     internal static string[] StartupArgs { get; private set; } = [];
+
+    /// <summary>App-wide logger; a real FileLog once startup gets going.</summary>
+    internal static ILog Log { get; private set; } = NullLog.Instance;
 
     private Mutex? _singleInstance;
 
@@ -40,6 +45,9 @@ public partial class App : Application
         }
 
         var paths = new AppPaths();
+        Log = new FileLog(paths.LogsDir);
+        InstallGlobalExceptionHandlers();
+        Log.Info($"Attractor starting (data: {paths.Root})");
 
         AppConfig config;
         try
@@ -48,6 +56,7 @@ public partial class App : Application
         }
         catch (InvalidDataException ex)
         {
+            Log.Error("config load failed", ex);
             MessageBox.Show(ex.Message, "Attractor — config problem",
                 MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
@@ -59,11 +68,43 @@ public partial class App : Application
             || !File.Exists(config.Mame.ExePath);
         if (wantSetup)
         {
+            Log.Info("opening first-run setup wizard");
             new SetupWindow(paths, config).Show();
             return;
         }
 
-        var vm = new MainViewModel(config, paths);
+        var vm = new MainViewModel(config, paths, Log);
         new MainWindow(vm, paths, config, forceRescan: e.Args.Contains("--rescan")).Show();
+    }
+
+    /// <summary>
+    /// Catch what would otherwise be silent crashes: log them, and for UI-thread
+    /// faults keep the app alive with a friendly notice rather than vanishing.
+    /// </summary>
+    private void InstallGlobalExceptionHandlers()
+    {
+        DispatcherUnhandledException += (_, args) =>
+        {
+            Log.Error("unhandled UI exception", args.Exception);
+            MessageBox.Show(
+                $"Something went wrong:\n\n{args.Exception.Message}\n\n" +
+                "It's been logged (File → Open config folder → logs). The app will keep running.",
+                "Attractor", MessageBoxButton.OK, MessageBoxImage.Warning);
+            args.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            Log.Error("unhandled non-UI exception", args.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Warn("unobserved task exception", args.Exception);
+            args.SetObserved();
+        };
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Log.Info($"Attractor exiting (code {e.ApplicationExitCode})");
+        (Log as IDisposable)?.Dispose();
+        base.OnExit(e);
     }
 }

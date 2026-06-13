@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Attractor.Core.Art;
 using Attractor.Core.Catalog;
 using Attractor.Core.Configuration;
+using Attractor.Core.Diagnostics;
 using Attractor.Core.Mame;
 using Attractor.Core.Rotation;
 using Attractor.Core.Windowing;
@@ -17,6 +18,7 @@ public sealed partial class MainViewModel : ObservableObject
 {
     private readonly AppConfig _config;
     private readonly AppPaths _paths;
+    private readonly ILog _log;
     private readonly Dispatcher _dispatcher;
     private readonly MameLauncher _launcher = new();
     private readonly IMameWindowEmbedder _embedder;
@@ -68,10 +70,11 @@ public sealed partial class MainViewModel : ObservableObject
 
     private Dictionary<string, string> _history = new(StringComparer.Ordinal);
 
-    public MainViewModel(AppConfig config, AppPaths paths)
+    public MainViewModel(AppConfig config, AppPaths paths, ILog? log = null)
     {
         _config = config;
         _paths = paths;
+        _log = log ?? NullLog.Instance;
         _dispatcher = Dispatcher.CurrentDispatcher;
         _embedder = config.Window.EmbedMode == "reparent" ? new ReparentEmbedder() : new GlueEmbedder();
         _countdownTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Normal,
@@ -117,12 +120,14 @@ public sealed partial class MainViewModel : ObservableObject
             }
             catch (Exception ex)
             {
+                _log.Error("catalog build failed", ex);
                 StageMessage = $"catalog failed: {ex.Message}";
                 return;
             }
 
             if (_db.All.Count == 0)
             {
+                _log.Warn("catalog built but 0 eligible games (check rompath)");
                 StageMessage = "no eligible games found — check MAME's rompath / File → Rescan";
                 return;
             }
@@ -151,7 +156,9 @@ public sealed partial class MainViewModel : ObservableObject
                 new RotationOptions { DwellSeconds = _config.Rotation.DwellSeconds },
                 extraArgs: extraArgs,
                 savedBagQueue: savedQueue,
-                onBagChanged: SaveBagState);
+                onBagChanged: SaveBagState,
+                log: _log);
+            _log.Info($"catalog ready: {_db.All.Count} games (resumed {savedQueue?.Count ?? 0} in cycle)");
 
             engine.GameChanged += g => _dispatcher.BeginInvoke(() => OnGameChanged(g));
             engine.WindowReady += w => _dispatcher.BeginInvoke(() => OnWindowReady(w));

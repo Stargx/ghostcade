@@ -221,7 +221,7 @@ public partial class SetupWindow : Window
         };
         ConfigStore.Save(_paths.ConfigFile, config);
 
-        var vm = new MainViewModel(config, _paths);
+        var vm = new MainViewModel(config, _paths, App.Log);
         new MainWindow(vm, _paths, config).Show();
         Close();
     }

@@ -44,7 +44,14 @@ public sealed class ShuffleBag
             var pool = _pool();
             if (pool.Count == 0)
                 return null;
-            foreach (var game in pool.OrderBy(_ => _random.Next()))
+            // Fisher–Yates: provably uniform (no tie-bias of OrderBy(random)).
+            var shuffled = pool.ToArray();
+            for (int i = shuffled.Length - 1; i > 0; i--)
+            {
+                int j = _random.Next(i + 1);
+                (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+            }
+            foreach (var game in shuffled)
                 _queue.Enqueue(game);
         }
         return null; // pool exists but everything is excluded
