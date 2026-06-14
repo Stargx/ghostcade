@@ -1,11 +1,14 @@
 namespace Attractor.Core.Rotation;
 
 /// <summary>
-/// Splits a dwell time into MAME -seconds_to_run chunks. Every chunk stays
-/// under 300 emulated seconds because all MAME versions (0.147 → current)
-/// suppress their startup screens — including the blocking "this game doesn't
-/// work properly, press a key" warning — only when 0 &lt; str &lt; 300
-/// (`str &lt; 60*5` in ui.cpp). Longer dwells relaunch the same game per chunk.
+/// Splits a dwell time into per-launch chunks, in seconds. Every chunk stays
+/// under 300 emulated seconds so MAME suppresses its startup screens —
+/// including the blocking "this game doesn't work properly, press a key"
+/// warning — which it does while 0 &lt; run &lt; 300s (`str &lt; 60*5` in ui.cpp).
+/// The planner is version-agnostic: it always works in seconds, and
+/// MameLaunchSpec emits the right flag per build (-seconds_to_run for 0.147 →
+/// current, -frames_to_run = seconds × refresh for legacy 0.78+). Longer dwells
+/// relaunch the same game per chunk.
 /// </summary>
 public static class ChunkPlanner
 {

@@ -20,6 +20,15 @@ public sealed record AppConfig
         public List<string> ExtraArgs { get; init; } = [];
         /// <summary>Passed to MAME as -volume (dB attenuation, 0 = full).</summary>
         public int VolumeAttenuation { get; init; } = 0;
+        /// <summary>
+        /// Launch dialect: "auto" (detect from the exe at startup), "seconds"
+        /// (modern MAME, -seconds_to_run) or "frames" (legacy MAME,
+        /// -frames_to_run). Setup writes a concrete value so post-setup launches
+        /// skip the probe; old configs default to "auto" and self-heal.
+        /// </summary>
+        public string TimingMode { get; init; } = "auto";
+        /// <summary>Detected MAME minor version (e.g. 220), for diagnostics; null if unknown.</summary>
+        public int? DetectedVersionMinor { get; init; } = null;
     }
 
     public sealed record ArtSection

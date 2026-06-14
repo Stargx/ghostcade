@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private HotkeyManager? _hotkeys;
     private PixelRect _lastHostRect;
     private bool _shutdownComplete;
+    private bool _closing;
 
     // Layout mode: full cabinet vs slim. Hysteresis avoids flicker right at the
     // threshold (go slim under 1080 tall, return to full only once back over 1120).
@@ -166,12 +167,26 @@ public partial class MainWindow : Window
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_shutdownComplete)
-            return;
-        e.Cancel = true;
+            return;             // async cleanup already done — let this close proceed
+        e.Cancel = true;        // defer the close until cleanup finishes
+        if (_closing)
+            return;             // cleanup already in flight (re-entrant close) — keep deferring
+        _closing = true;
+
         _hotkeys?.Dispose();
         WindowPlacement.Save(this, _paths.PlacementFile);
-        await _vm.ShutdownAsync();
+        try { await _vm.ShutdownAsync(); }
+        catch (Exception ex) { App.Log.Error("shutdown failed", ex); }
         _shutdownComplete = true;
-        Close();
+
+        // Re-issue the close outside this Closing notification. Guard against the
+        // window already being torn down — e.g. an app/session shutdown that
+        // ignored our Cancel — which would otherwise throw "while a Window is
+        // closing" from VerifyNotClosing().
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            try { Close(); }
+            catch (InvalidOperationException) { /* already closing */ }
+        });
     }
 }

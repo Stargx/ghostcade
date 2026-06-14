@@ -17,6 +17,7 @@ public partial class SetupWindow : Window
     private int _page = 1;
     private CancellationTokenSource? _scanCts;
     private GameDatabase? _scannedDb;
+    private MameCapabilities? _caps;
 
     public SetupWindow(AppPaths paths, AppConfig? existing = null)
     {
@@ -44,35 +45,38 @@ public partial class SetupWindow : Window
     {
         var path = MamePathBox.Text.Trim();
         bool exists = path.Length > 4 && File.Exists(path);
-        NextBtn.IsEnabled = exists;
+        _caps = null;
+        NextBtn.IsEnabled = false;
         ProbeText.Text = "";
         if (!exists)
             return;
 
         ProbeText.Text = "checking…";
-        var probed = await ProbeMameAsync(path);
-        if (MamePathBox.Text.Trim() == path) // user may have kept typing
-            ProbeText.Text = probed;
+        var caps = await ProbeMameAsync(path);
+        if (MamePathBox.Text.Trim() != path) // user kept typing — stale result
+            return;
+        _caps = caps;
+        ProbeText.Text = caps switch
+        {
+            null => "✗ no response — slow share, or this isn't MAME",
+            { Supported: false } => $"✗ MAME {caps.VersionLabel} is too old — Attractor needs 0.78 or newer",
+            _ => $"✓ MAME {caps.VersionLabel} detected",
+        };
+        // Block progress on an unsupported MAME so the user never reaches a
+        // rotation that would crash-loop every game.
+        NextBtn.IsEnabled = caps is { Supported: true };
     }
 
-    private static async Task<string> ProbeMameAsync(string path)
+    private static async Task<MameCapabilities?> ProbeMameAsync(string path)
     {
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            string banner = "";
-            await MameVerbRunner.RunLinesAsync(path, ["-help"],
-                line => { if (banner.Length == 0 && line.Trim().Length > 0) banner = line.Trim(); },
-                cts.Token);
-            return banner.Length > 0 ? $"✓ {banner}" : "✓ runs (no banner)";
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            return await MameCapabilities.DetectAsync(path, cts.Token);
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
-            return "✗ no response in 10s — slow share, or not MAME?";
-        }
-        catch (Exception ex)
-        {
-            return $"✗ {ex.Message}";
+            return null; // timeout (slow share) or not a runnable MAME exe
         }
     }
 
@@ -121,8 +125,12 @@ public partial class SetupWindow : Window
         _scanCts = new CancellationTokenSource();
         try
         {
+            // Read the TextBox on the UI thread; the Task.Run body runs on a
+            // thread-pool thread where touching a WPF control would throw
+            // "calling thread cannot access this object".
+            var mameExe = MamePathBox.Text.Trim();
             var db = await Task.Run(() => CatalogBuilder.BuildAsync(
-                MamePathBox.Text.Trim(), _paths.MachinesCacheFile, _paths.VerifyCacheFile,
+                mameExe, _paths.MachinesCacheFile, _paths.VerifyCacheFile,
                 new FileTagStore(_paths.BannedFile), new FileTagStore(_paths.FavoritesFile),
                 new Progress<ScanProgress>(p => Dispatcher.BeginInvoke(() =>
                     ScanProgressText.Text = $"SCANNING — {p.Stage.ToUpperInvariant()}: {p.Count}")),
@@ -191,7 +199,7 @@ public partial class SetupWindow : Window
         if (_page == 1)
         {
             NextBtn.Content = "NEXT ▶";
-            NextBtn.IsEnabled = File.Exists(MamePathBox.Text.Trim());
+            NextBtn.IsEnabled = _caps is { Supported: true } && File.Exists(MamePathBox.Text.Trim());
         }
     }
 
@@ -212,7 +220,13 @@ public partial class SetupWindow : Window
 
         var config = new AppConfig
         {
-            Mame = new AppConfig.MameSection { ExePath = mameExe },
+            Mame = new AppConfig.MameSection
+            {
+                ExePath = mameExe,
+                TimingMode = _caps is null ? "auto"
+                    : _caps.TimingMode == MameTimingMode.FramesToRun ? "frames" : "seconds",
+                DetectedVersionMinor = _caps?.VersionMinor,
+            },
             Art = new AppConfig.ArtSection
             {
                 MarqueeDirs = [Relativize(MarqueeDirBox.Text.Trim())],

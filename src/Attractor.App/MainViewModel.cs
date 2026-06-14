@@ -106,6 +106,37 @@ public sealed partial class MainViewModel : ObservableObject
             }
 
             var mameExe = _config.Mame.ExePath;
+
+            // Resolve which MAME launch dialect to use. Setup persists a concrete
+            // "seconds"/"frames"; "auto" (e.g. an old config) probes the exe once
+            // here and gates unsupported builds before any scan/rotation work.
+            MameTimingMode timingMode;
+            int refreshHz = 60;
+            var configuredMode = _config.Mame.TimingMode?.Trim().ToLowerInvariant();
+            if (configuredMode == "frames")
+                timingMode = MameTimingMode.FramesToRun;
+            else if (configuredMode == "seconds")
+                timingMode = MameTimingMode.SecondsToRun;
+            else
+            {
+                MameCapabilities caps;
+                try { caps = await MameCapabilities.DetectAsync(mameExe, _cts.Token); }
+                catch (Exception ex)
+                {
+                    _log.Error("MAME version probe failed", ex);
+                    StageMessage = $"couldn't run MAME to detect its version:\n{ex.Message}";
+                    return;
+                }
+                if (!caps.Supported)
+                {
+                    _log.Error($"unsupported MAME version {caps.VersionLabel}");
+                    StageMessage = $"MAME {caps.VersionLabel} isn't supported — Attractor needs 0.78 or newer.";
+                    return;
+                }
+                timingMode = caps.TimingMode;
+                refreshHz = caps.RefreshHz;
+            }
+
             StageMessage = forceRescan ? "RESCANNING…" : "LOADING CATALOG…";
             try
             {
@@ -155,7 +186,9 @@ public sealed partial class MainViewModel : ObservableObject
                 extraArgs: extraArgs,
                 savedBagQueue: savedQueue,
                 onBagChanged: SaveBagState,
-                log: _log);
+                log: _log,
+                timingMode: timingMode,
+                refreshHz: refreshHz);
             _log.Info($"catalog ready: {_db.All.Count} games (resumed {savedQueue?.Count ?? 0} in cycle)");
 
             engine.GameChanged += g => _dispatcher.BeginInvoke(() => OnGameChanged(g));

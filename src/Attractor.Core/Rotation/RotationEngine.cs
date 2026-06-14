@@ -20,6 +20,8 @@ public sealed class RotationEngine : IAsyncDisposable
     private readonly RotationOptions _options;
     private readonly string _mameExePath;
     private readonly IReadOnlyList<string>? _extraArgs;
+    private readonly MameTimingMode _timingMode;
+    private readonly int _refreshHz;
     private readonly TimeProvider _time;
     private readonly ILog _log;
 
@@ -48,7 +50,9 @@ public sealed class RotationEngine : IAsyncDisposable
         IReadOnlyList<string>? extraArgs = null,
         IEnumerable<string>? savedBagQueue = null,
         Action<IReadOnlyList<string>>? onBagChanged = null,
-        ILog? log = null)
+        ILog? log = null,
+        MameTimingMode timingMode = MameTimingMode.SecondsToRun,
+        int refreshHz = 60)
     {
         _launcher = launcher;
         _poolProvider = poolProvider;
@@ -58,6 +62,8 @@ public sealed class RotationEngine : IAsyncDisposable
         _finder = finder ?? new GameWindowFinder();
         _time = time ?? TimeProvider.System;
         _extraArgs = extraArgs;
+        _timingMode = timingMode;
+        _refreshHz = refreshHz;
         _onBagChanged = onBagChanged;
         _log = log ?? NullLog.Instance;
         _bag = new ShuffleBag(poolProvider, random, savedBagQueue);
@@ -220,7 +226,8 @@ public sealed class RotationEngine : IAsyncDisposable
     private async Task<ChunkResult> RunChunkAsync(string game, int chunkSeconds, CancellationToken ct)
     {
         _proc?.Dispose();
-        _proc = _launcher.Launch(new MameLaunchSpec(_mameExePath, game, chunkSeconds, _extraArgs));
+        _proc = _launcher.Launch(new MameLaunchSpec(
+            _mameExePath, game, chunkSeconds, _extraArgs, TimingMode: _timingMode, RefreshHz: _refreshHz));
         var proc = _proc;
         var started = Stopwatch.StartNew();
 

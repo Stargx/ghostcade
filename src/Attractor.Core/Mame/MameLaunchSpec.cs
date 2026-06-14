@@ -8,7 +8,9 @@ public sealed record MameLaunchSpec(
     string GameName,
     int SecondsToRun,
     IReadOnlyList<string>? ExtraArgs = null,
-    bool Windowed = true)
+    bool Windowed = true,
+    MameTimingMode TimingMode = MameTimingMode.SecondsToRun,
+    int RefreshHz = 60)
 {
     public string WorkingDirectory => Path.GetDirectoryName(MameExePath)!;
 
@@ -18,6 +20,12 @@ public sealed record MameLaunchSpec(
         if (!string.IsNullOrWhiteSpace(GameName))
             args.Add(GameName);
         args.Add("-skip_gameinfo");
+        // Legacy MAME blocks on a copyright/disclaimer screen with no
+        // emulated-time auto-dismiss; -skip_disclaimer clears it. Modern MAME
+        // has no such option (passing it is a fatal "unknown option") and
+        // instead auto-suppresses startup screens while the run stays < 300s.
+        if (TimingMode == MameTimingMode.FramesToRun)
+            args.Add("-skip_disclaimer");
         args.Add("-nomouse");
         if (Windowed)
         {
@@ -26,11 +34,21 @@ public sealed record MameLaunchSpec(
         }
         if (SecondsToRun > 0)
         {
-            // Staying under 300 emulated seconds makes every MAME version
-            // (0.147 → current) suppress all startup screens, including the
-            // blocking "this game doesn't work properly" warning.
-            args.Add("-seconds_to_run");
-            args.Add(SecondsToRun.ToString(CultureInfo.InvariantCulture));
+            // Keeping each chunk under 300 emulated seconds makes MAME suppress
+            // its startup screens, including the blocking "doesn't work
+            // properly" warning. Under FramesToRun that invariant maps to
+            // < 300 × refresh frames.
+            if (TimingMode == MameTimingMode.SecondsToRun)
+            {
+                args.Add("-seconds_to_run");
+                args.Add(SecondsToRun.ToString(CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                long frames = checked((long)SecondsToRun * RefreshHz);
+                args.Add("-frames_to_run");
+                args.Add(frames.ToString(CultureInfo.InvariantCulture));
+            }
         }
         if (ExtraArgs is { Count: > 0 })
             args.AddRange(ExtraArgs);
