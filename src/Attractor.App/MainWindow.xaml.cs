@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private PixelRect _lastHostRect;
     private bool _shutdownComplete;
     private bool _closing;
+    private bool _relaunchPending;
 
     // Layout mode: full cabinet vs slim. Hysteresis avoids flicker right at the
     // threshold (go slim under 1080 tall, return to full only once back over 1120).
@@ -154,6 +155,51 @@ public partial class MainWindow : Window
 
     private void ExitMenu_Click(object sender, RoutedEventArgs e) => Close();
 
+    /// <summary>
+    /// Re-run the setup wizard against the current config so the user can repoint
+    /// Attractor at a different MAME / ROM folder (each with its own version) and
+    /// rescan — no hand-editing of config.json. Shown modally so the live rotation
+    /// behind it can't be poked (e.g. a second Rescan racing the wizard's own
+    /// scan) while we reconfigure. The wizard saves the new config and reports
+    /// success; we then close, and <see cref="OnClosing"/> relaunches the new
+    /// collection once the current rotation + embedded MAME are fully torn down.
+    /// Cancelling the wizard leaves the running rotation untouched.
+    /// </summary>
+    private void SetupWizardMenu_Click(object sender, RoutedEventArgs e)
+    {
+        var setup = new SetupWindow(_paths, _config, reSetup: true) { Owner = this };
+        if (setup.ShowDialog() == true)
+        {
+            _relaunchPending = true;
+            Close();
+        }
+    }
+
+    /// <summary>Open the freshly-saved configuration in a new window. Called from
+    /// OnClosing while this window is still up; it always leaves a window on screen
+    /// (the new main window, or the setup wizard on failure) so the app never drops
+    /// to zero windows and exits under ShutdownMode=OnLastWindowClose.</summary>
+    private void RelaunchFromConfig()
+    {
+        try
+        {
+            var config = ConfigStore.Load(_paths.ConfigFile);
+            var vm = new MainViewModel(config, _paths, App.Log);
+            new MainWindow(vm, _paths, config).Show();
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("re-setup relaunch failed", ex);
+            MessageBox.Show(this,
+                $"Couldn't start the new configuration:\n\n{ex.Message}\n\n" +
+                "Re-opening setup so you can correct it.",
+                "Attractor", MessageBoxButton.OK, MessageBoxImage.Error);
+            // Keep the app alive with a usable window: the wizard (first-run mode)
+            // opens a fresh main window once setup finishes.
+            new SetupWindow(_paths, _config).Show();
+        }
+    }
+
     private void AboutMenu_Click(object sender, RoutedEventArgs e)
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "dev";
@@ -178,6 +224,13 @@ public partial class MainWindow : Window
         try { await _vm.ShutdownAsync(); }
         catch (Exception ex) { App.Log.Error("shutdown failed", ex); }
         _shutdownComplete = true;
+
+        // A re-setup just saved a new config: bring up the fresh collection now,
+        // while this window is still on screen, so the app never hits zero windows.
+        // Hotkeys were released above and the old rotation/MAME are fully gone, so
+        // the new window registers hotkeys and launches MAME without colliding.
+        if (_relaunchPending)
+            RelaunchFromConfig();
 
         // Re-issue the close outside this Closing notification. Guard against the
         // window already being torn down — e.g. an app/session shutdown that

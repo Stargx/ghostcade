@@ -14,6 +14,7 @@
     <Menu DockPanel.Dock="Top" Background="Transparent" Foreground="{StaticResource TextDim}">
       <MenuItem Header="_File">
         <MenuItem Header="_Rescan ROMs" Command="{Binding RescanCommand}"/>
+        <MenuItem Header="Setup _Wizard…" Click="SetupWizardMenu_Click"/>
         <MenuItem Header="_Open config folder" Command="{Binding OpenConfigFolderCommand}"/>
         <Separator/>
         <MenuItem Header="E_xit" Click="ExitMenu_Click"/>
