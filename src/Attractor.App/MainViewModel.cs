@@ -16,7 +16,7 @@ namespace Attractor.App;
 
 public sealed partial class MainViewModel : ObservableObject
 {
-    private readonly AppConfig _config;
+    private AppConfig _config; // reassigned (via `with`) when the filter changes
     private readonly AppPaths _paths;
     private readonly ILog _log;
     private readonly Dispatcher _dispatcher;
@@ -161,6 +161,9 @@ public sealed partial class MainViewModel : ObservableObject
                 return;
             }
 
+            ApplyStartupFilter();
+            RefreshFilterOptions();
+
             _art = new ArtLocator(
                 Path.GetDirectoryName(mameExe)!, _config.Art.MarqueeDirs, _config.Art.SnapDirs);
 
@@ -188,7 +191,8 @@ public sealed partial class MainViewModel : ObservableObject
                 onBagChanged: SaveBagState,
                 log: _log,
                 timingMode: timingMode,
-                refreshHz: refreshHz);
+                refreshHz: refreshHz,
+                filteredOut: name => _db is null || !_db.MatchesFilter(name));
             _log.Info($"catalog ready: {_db.All.Count} games (resumed {savedQueue?.Count ?? 0} in cycle)");
 
             engine.GameChanged += g => _dispatcher.BeginInvoke(() => OnGameChanged(g));
@@ -215,6 +219,131 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void OpenConfigFolder() => System.Diagnostics.Process.Start("explorer.exe", _paths.Root);
+
+    // ---- year / manufacturer filter --------------------------------------------
+
+    /// <summary>Raised on the UI thread after the catalog (re)builds, so the host can
+    /// rebuild the Filter menu from the new <see cref="AvailableDecades"/> / <see cref="AvailableManufacturers"/>.</summary>
+    public event Action? CatalogChanged;
+
+    /// <summary>Decade start years present in the catalog (e.g. 1980), ascending.</summary>
+    public IReadOnlyList<int> AvailableDecades { get; private set; } = [];
+
+    /// <summary>Manufacturers present, most games first (for the menu's common list + the picker).</summary>
+    public IReadOnlyList<ManufacturerCount> AvailableManufacturers { get; private set; } = [];
+
+    /// <summary>The filter currently applied to the rotation.</summary>
+    public GameFilter ActiveFilter => _db?.Filter ?? GameFilter.None;
+
+    /// <summary>Games that pass the current filter and aren't banned (i.e. playable now).</summary>
+    public int FilteredGameCount => _db?.RotationPool().Count ?? 0;
+
+    /// <summary>The live config, including runtime filter changes — use this (not the
+    /// constructor copy) when re-running setup so an active filter is preserved.</summary>
+    public AppConfig Config => _config;
+
+    public void ToggleDecade(int decade)
+    {
+        if (_db is null) return;
+        var decades = new HashSet<int>(_db.Filter.Decades);
+        if (!decades.Add(decade)) decades.Remove(decade);
+        ApplyFilter(new GameFilter(decades, _db.Filter.Manufacturers));
+    }
+
+    public void ToggleManufacturer(string manufacturer)
+    {
+        if (_db is null) return;
+        var mans = new HashSet<string>(_db.Filter.Manufacturers, StringComparer.OrdinalIgnoreCase);
+        if (!mans.Add(manufacturer)) mans.Remove(manufacturer);
+        ApplyFilter(new GameFilter(_db.Filter.Decades, mans));
+    }
+
+    /// <summary>Replace the manufacturer selection wholesale (from the picker dialog).</summary>
+    public void SetManufacturers(IEnumerable<string> manufacturers)
+    {
+        if (_db is null) return;
+        ApplyFilter(new GameFilter(_db.Filter.Decades, manufacturers));
+    }
+
+    public void ClearFilters()
+    {
+        if (_db is null) return;
+        ApplyFilter(GameFilter.None);
+    }
+
+    /// <summary>Apply a filter and steer the rotation to honor it. An empty result is
+    /// allowed — the engine idles on a "no games match" notice (recoverable) rather
+    /// than faulting — so filters can be built up freely in any order.</summary>
+    private void ApplyFilter(GameFilter filter)
+    {
+        if (_db is null) return;
+        _db.Filter = filter;
+        PersistFilter();
+
+        int eligible = _db.RotationPool().Count;
+        StatusMessage = !filter.IsActive ? "Filter cleared"
+            : eligible > 0 ? $"Filter active — {eligible} games"
+            : "No games match this filter — rotation paused";
+
+        // Steer the engine: Nudge() wakes it if it was idle on an empty pool (no-op
+        // while a game plays); Skip() jumps off a current game that no longer matches.
+        // A still-matching current game is left to finish; leftover bag entries are
+        // skipped on the next draw.
+        if (_engine is { } engine)
+        {
+            engine.Nudge();
+            if (engine.CurrentGame is { } current && !_db.MatchesFilter(current))
+                engine.Skip();
+        }
+    }
+
+    private void ApplyStartupFilter()
+    {
+        if (_db is null) return;
+        _db.Filter = new GameFilter(_config.Filter.Decades, _config.Filter.Manufacturers);
+        if (_db.Filter.IsActive && _db.RotationPool().Count == 0)
+        {
+            _log.Warn("saved filter matches no games in this catalog — clearing it");
+            _db.Filter = GameFilter.None;
+            PersistFilter();
+            StatusMessage = "Saved year/manufacturer filter matched no games here — filter cleared.";
+        }
+    }
+
+    private void RefreshFilterOptions()
+    {
+        if (_db is null) return;
+        AvailableDecades = _db.All
+            .Select(e => e.DecadeStart()).Where(d => d is not null).Select(d => d!.Value)
+            .Distinct().OrderBy(d => d).ToArray();
+        AvailableManufacturers = _db.All
+            // group case-insensitively to match the filter's OrdinalIgnoreCase set,
+            // so case-variant spellings collapse to one entry with a combined count
+            .GroupBy(e => e.Manufacturer, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ManufacturerCount(g.First().Manufacturer, g.Count()))
+            .OrderByDescending(m => m.Count).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        CatalogChanged?.Invoke();
+    }
+
+    private void PersistFilter()
+    {
+        _config = _config with
+        {
+            Filter = new AppConfig.FilterSection
+            {
+                Decades = _db!.Filter.Decades.OrderBy(d => d).ToList(),
+                Manufacturers = _db.Filter.Manufacturers.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).ToList(),
+            },
+        };
+        // Best-effort, like SaveBagState: a locked/read-only config dir mustn't crash
+        // a filter toggle or abort startup — the filter still applies in memory.
+        try { ConfigStore.Save(_paths.ConfigFile, _config); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warn("couldn't persist filter to config", ex);
+        }
+    }
 
     // Persisted shuffle-cycle progress (called on the engine loop thread after
     // each fresh draw). Writing to the local data dir is cheap and infrequent.
@@ -363,12 +492,18 @@ public sealed partial class MainViewModel : ObservableObject
             CountdownLabel = "STOPPED";
             CountdownValue = "--:--";
         }
+        else if (s == RotationState.Empty)
+        {
+            StageMessage = "NO GAMES MATCH THE CURRENT FILTER\n\nAdjust it under File → Filter.";
+            CountdownLabel = "PAUSED";
+            CountdownValue = "--:--";
+        }
     }
 
     private void UpdateCountdown()
     {
         if (_engine is null) return;
-        if (_engine.State == RotationState.Faulted) return;
+        if (_engine.State is RotationState.Faulted or RotationState.Empty) return;
         if (_engine.IsHeld)
         {
             CountdownLabel = "ON HOLD";
@@ -434,3 +569,6 @@ public sealed partial class MainViewModel : ObservableObject
             _ = ApplyMuteWithRetryAsync(_currentPid, IsMuted);
     }
 }
+
+/// <summary>A manufacturer and how many catalog games it has, for the filter menu.</summary>
+public sealed record ManufacturerCount(string Name, int Count);

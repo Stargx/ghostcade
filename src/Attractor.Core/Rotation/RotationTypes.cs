@@ -2,9 +2,9 @@ using Attractor.Core.Windowing;
 
 namespace Attractor.Core.Rotation;
 
-public enum RotationState { Stopped, Running, Faulted }
+public enum RotationState { Stopped, Running, Faulted, Empty }
 
-public enum EngineCommand { Skip, Previous, ToggleHold, Ban, Stop }
+public enum EngineCommand { Skip, Previous, ToggleHold, Ban, Stop, Reevaluate }
 
 public enum GameFaultKind { CrashedAtLaunch, NoWindow, Hung }
 

@@ -19,11 +19,18 @@ public sealed class GameDatabase
     public ITagStore Banned { get; }
     public ITagStore Favorites { get; }
 
+    /// <summary>Year/manufacturer filter applied live to the rotation pool; default
+    /// none. Mutable so the UI can re-point the rotation without rebuilding.</summary>
+    public GameFilter Filter { get; set; } = GameFilter.None;
+
     public GameEntry? Find(string name) => _byName.GetValueOrDefault(name);
 
-    /// <summary>Names eligible for rotation right now (bans apply live).</summary>
+    /// <summary>Names eligible for rotation right now (bans and the filter apply live).</summary>
     public IReadOnlyList<string> RotationPool() =>
-        _byName.Values.Where(e => !Banned.Contains(e.Name)).Select(e => e.Name).ToArray();
+        _byName.Values.Where(e => !Banned.Contains(e.Name) && Filter.Matches(e)).Select(e => e.Name).ToArray();
+
+    /// <summary>True if the game passes the active filter (banning is handled separately).</summary>
+    public bool MatchesFilter(string name) => Find(name) is { } e && Filter.Matches(e);
 
     public static GameDatabase Assemble(
         IEnumerable<MachineInfo> machines,

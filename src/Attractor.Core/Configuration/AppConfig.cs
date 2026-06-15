@@ -13,6 +13,7 @@ public sealed record AppConfig
     public RotationSection Rotation { get; init; } = new();
     public HotkeysSection Hotkeys { get; init; } = new();
     public WindowSection Window { get; init; } = new();
+    public FilterSection Filter { get; init; } = new();
 
     public sealed record MameSection
     {
@@ -59,6 +60,19 @@ public sealed record AppConfig
     {
         /// <summary>"glue" (default) or "reparent" — see docs/embedding.md.</summary>
         public string EmbedMode { get; init; } = "glue";
+    }
+
+    /// <summary>
+    /// Restricts the rotation to games matching the chosen decades and/or
+    /// manufacturers (File → Filter). Empty lists = no filter. Backward
+    /// compatible: older configs simply default both to empty.
+    /// </summary>
+    public sealed record FilterSection
+    {
+        /// <summary>Decade start years to include (e.g. 1980 = the 1980s); empty = all years.</summary>
+        public List<int> Decades { get; init; } = [];
+        /// <summary>Manufacturer names to include (exact, as MAME reports them); empty = all.</summary>
+        public List<string> Manufacturers { get; init; } = [];
     }
 }
 

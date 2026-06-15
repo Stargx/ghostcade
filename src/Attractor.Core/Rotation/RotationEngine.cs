@@ -24,6 +24,7 @@ public sealed class RotationEngine : IAsyncDisposable
     private readonly int _refreshHz;
     private readonly TimeProvider _time;
     private readonly ILog _log;
+    private readonly Func<string, bool>? _filteredOut;
 
     private readonly Channel<EngineCommand> _commands = Channel.CreateUnbounded<EngineCommand>();
     private readonly ShuffleBag _bag;
@@ -52,7 +53,8 @@ public sealed class RotationEngine : IAsyncDisposable
         Action<IReadOnlyList<string>>? onBagChanged = null,
         ILog? log = null,
         MameTimingMode timingMode = MameTimingMode.SecondsToRun,
-        int refreshHz = 60)
+        int refreshHz = 60,
+        Func<string, bool>? filteredOut = null)
     {
         _launcher = launcher;
         _poolProvider = poolProvider;
@@ -66,6 +68,7 @@ public sealed class RotationEngine : IAsyncDisposable
         _refreshHz = refreshHz;
         _onBagChanged = onBagChanged;
         _log = log ?? NullLog.Instance;
+        _filteredOut = filteredOut;
         _bag = new ShuffleBag(poolProvider, random, savedBagQueue);
         _faults = new FaultPolicy(_time);
     }
@@ -88,6 +91,10 @@ public sealed class RotationEngine : IAsyncDisposable
     public void Previous() => _commands.Writer.TryWrite(EngineCommand.Previous);
     public void ToggleHold() => _commands.Writer.TryWrite(EngineCommand.ToggleHold);
     public void Ban() => _commands.Writer.TryWrite(EngineCommand.Ban);
+    /// <summary>Re-evaluate the eligible pool: wakes an idle (empty-pool) loop to try
+    /// drawing again; harmlessly ignored while a game is playing. Call after the
+    /// filter/bans change so a newly non-empty pool resumes without waiting.</summary>
+    public void Nudge() => _commands.Writer.TryWrite(EngineCommand.Reevaluate);
 
     public Task StartAsync(CancellationToken shutdown)
     {
@@ -123,11 +130,19 @@ public sealed class RotationEngine : IAsyncDisposable
                 var game = NextGame();
                 if (game is null)
                 {
-                    _log.Error("no game available to draw (pool empty or all excluded) — faulting");
-                    SetState(RotationState.Faulted);
-                    return;
+                    // Nothing eligible right now — the filter, bans and quarantine
+                    // left the pool empty. Recoverable, not a hard fault: idle until
+                    // a command nudges us (the user widens the filter, unbans, …)
+                    // then try drawing again. Genuine MAME/share failure still
+                    // reaches Faulted via the EngineFault verdict below.
+                    _log.Warn("no eligible games to draw (filter/bans/quarantine) — idling");
+                    SetState(RotationState.Empty);
+                    if (!await WaitForNudgeAsync(shutdown).ConfigureAwait(false))
+                        return; // Stop (or shutdown)
+                    continue;
                 }
 
+                SetState(RotationState.Running); // recover if we were idle
                 CurrentGame = game;
                 _log.Info($"now showing: {game}");
                 GameChanged?.Invoke(game);
@@ -155,7 +170,21 @@ public sealed class RotationEngine : IAsyncDisposable
         }
     }
 
-    private bool Excluded(string game) => _banned.Contains(game) || _faults.IsQuarantined(game);
+    private bool Excluded(string game) =>
+        _banned.Contains(game) || _faults.IsQuarantined(game) || (_filteredOut?.Invoke(game) ?? false);
+
+    /// <summary>Idle until a command arrives (used when the eligible pool is empty).
+    /// Returns false if that command was Stop (or the engine is shutting down), so
+    /// the caller ends the loop; true means "try drawing again".</summary>
+    private async Task<bool> WaitForNudgeAsync(CancellationToken shutdown)
+    {
+        if (!await _commands.Reader.WaitToReadAsync(shutdown).ConfigureAwait(false))
+            return false;
+        bool stop = false;
+        while (_commands.Reader.TryRead(out var command)) // drain the burst; one redraw
+            stop |= command == EngineCommand.Stop;
+        return !stop;
+    }
 
     private string? NextGame()
     {
@@ -281,6 +310,9 @@ public sealed class RotationEngine : IAsyncDisposable
                     IsHeld = !IsHeld;
                     HoldChanged?.Invoke(IsHeld);
                     continue; // game keeps running
+
+                case EngineCommand.Reevaluate:
+                    continue; // only meaningful when idle; the current game plays on
 
                 case EngineCommand.Skip:
                     _pendingNav = Navigation.Forward;

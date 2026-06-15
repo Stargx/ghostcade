@@ -25,11 +25,11 @@ public class RotationEngineTests
         public CancellationTokenSource Cts { get; } = new(TimeSpan.FromSeconds(30));
         public Task? LoopTask { get; private set; }
 
-        public Harness(string[] pool, RotationOptions? options = null)
+        public Harness(string[] pool, RotationOptions? options = null, Func<string, bool>? filteredOut = null)
         {
             Engine = new RotationEngine(
                 Launcher, () => pool, Banned, @"c:\fake\mame.exe",
-                options ?? FastOptions, new FakeWindowFinder(), random: new Random(42));
+                options ?? FastOptions, new FakeWindowFinder(), random: new Random(42), filteredOut: filteredOut);
             Engine.GameChanged += g => { lock (GamesSeen) GamesSeen.Add(g); };
             Engine.GameFaulted += f => { lock (Faults) Faults.Add(f); };
         }
@@ -119,18 +119,47 @@ public class RotationEngineTests
     }
 
     [Fact]
-    public async Task Crashing_game_faults_then_quarantines_then_engine_faults_on_empty_pool()
+    public async Task Filtered_out_games_are_never_drawn()
+    {
+        await using var h = new Harness(["a", "b", "c"], filteredOut: g => g == "b");
+        h.Start();
+        await h.SeenAtLeast(4); // a full cycle plus a reshuffle
+        lock (h.GamesSeen)
+            Assert.DoesNotContain("b", h.GamesSeen);
+    }
+
+    [Fact]
+    public async Task Crashing_game_quarantines_then_engine_idles_on_empty_pool()
     {
         await using var h = new Harness(["only"]);
         h.Launcher.OnLaunch = (_, proc) => proc.Exit(-5); // crash instantly, every time
         h.Start();
-        await Wait.ForAsync(() => h.Engine.State == RotationState.Faulted, 15000, "engine faulted");
+        // The only game faults twice -> quarantined -> nothing left to draw. That's a
+        // recoverable idle, NOT the terminal Faulted state (which is for MAME/share death).
+        await Wait.ForAsync(() => h.Engine.State == RotationState.Empty, 15000, "engine idle on empty pool");
         lock (h.Faults)
         {
             Assert.Equal(FaultVerdict.SkipGame, h.Faults[0].Verdict);
             Assert.Equal(FaultVerdict.QuarantineGame, h.Faults[1].Verdict);
             Assert.All(h.Faults, f => Assert.Equal(GameFaultKind.CrashedAtLaunch, f.Kind));
         }
+    }
+
+    [Fact]
+    public async Task Empty_pool_idles_and_recovers_instead_of_faulting()
+    {
+        await using var h = new Harness(["a"]);
+        h.Launcher.OnLaunch = (_, _) => { }; // game runs until killed
+        h.Start();
+        await h.SeenAtLeast(1);
+
+        h.Engine.Ban(); // ban the only game -> nothing left to draw
+        await Wait.ForAsync(() => h.Engine.State == RotationState.Empty, 15000, "idle on empty pool");
+
+        h.Banned.Toggle("a"); // it's eligible again
+        h.Engine.Nudge();     // wake the idle loop to re-draw
+        await h.SeenAtLeast(2);
+        Assert.Equal(RotationState.Running, h.Engine.State);
     }
 
     [Fact]

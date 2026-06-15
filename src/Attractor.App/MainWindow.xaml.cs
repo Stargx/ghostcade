@@ -22,6 +22,9 @@ public partial class MainWindow : Window
     private bool _shutdownComplete;
     private bool _closing;
     private bool _relaunchPending;
+    private MenuItem? _filterCountItem;
+    private MenuItem? _filterClearItem;
+    private const int CommonManufacturerCount = 25;
 
     // Layout mode: full cabinet vs slim. Hysteresis avoids flicker right at the
     // threshold (go slim under 1080 tall, return to full only once back over 1120).
@@ -38,6 +41,7 @@ public partial class MainWindow : Window
         _config = config;
         _forceRescan = forceRescan;
         DataContext = vm;
+        _vm.CatalogChanged += BuildFilterMenu; // raised on the UI thread (see MainViewModel)
 
         WindowPlacement.Restore(this, paths.PlacementFile);
 
@@ -168,7 +172,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void SetupWizardMenu_Click(object sender, RoutedEventArgs e)
     {
-        var setup = new SetupWindow(_paths, _config, reSetup: true) { Owner = this };
+        var setup = new SetupWindow(_paths, _vm.Config, reSetup: true) { Owner = this };
         if (setup.ShowDialog() == true)
         {
             _relaunchPending = true;
@@ -211,7 +215,7 @@ public partial class MainWindow : Window
                 "Attractor", MessageBoxButton.OK, MessageBoxImage.Error);
             // Keep the app alive with a usable window: the wizard (first-run mode)
             // opens a fresh main window once setup finishes.
-            new SetupWindow(_paths, _config).Show();
+            new SetupWindow(_paths, _vm.Config).Show();
         }
     }
 
@@ -223,6 +227,96 @@ public partial class MainWindow : Window
             "rotation while you work.\n\nhttps://github.com/Stargx/attractor\n\n" +
             "MAME is a trademark of its owners; Attractor ships no ROMs and is not\naffiliated with the MAME team.",
             "About Attractor", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    // ---- filter menu (built from the catalog once it's loaded) -----------------
+
+    /// <summary>Populate the Filter menu from the current catalog. Called whenever the
+    /// catalog (re)builds; individual toggles update in place rather than rebuilding.</summary>
+    private void BuildFilterMenu()
+    {
+        FilterMenu.Items.Clear();
+        var filter = _vm.ActiveFilter;
+
+        var decadeMenu = new MenuItem { Header = "_Decade", IsEnabled = _vm.AvailableDecades.Count > 0 };
+        foreach (var d in _vm.AvailableDecades)
+        {
+            var item = new MenuItem
+            {
+                Header = $"{d}s", IsCheckable = true, StaysOpenOnClick = true,
+                IsChecked = filter.Decades.Contains(d), Tag = d,
+            };
+            item.Click += DecadeItem_Click;
+            decadeMenu.Items.Add(item);
+        }
+        FilterMenu.Items.Add(decadeMenu);
+
+        var manMenu = new MenuItem { Header = "_Manufacturer", IsEnabled = _vm.AvailableManufacturers.Count > 0 };
+        foreach (var m in _vm.AvailableManufacturers.Take(CommonManufacturerCount))
+        {
+            var item = new MenuItem
+            {
+                Header = $"{m.Name} ({m.Count})", IsCheckable = true, StaysOpenOnClick = true,
+                IsChecked = filter.Manufacturers.Contains(m.Name), Tag = m.Name,
+            };
+            item.Click += ManufacturerItem_Click;
+            manMenu.Items.Add(item);
+        }
+        if (_vm.AvailableManufacturers.Count > CommonManufacturerCount)
+        {
+            manMenu.Items.Add(new Separator());
+            var more = new MenuItem { Header = "_More…" };
+            more.Click += (_, _) => OpenManufacturerPicker();
+            manMenu.Items.Add(more);
+        }
+        FilterMenu.Items.Add(manMenu);
+
+        FilterMenu.Items.Add(new Separator());
+        _filterClearItem = new MenuItem { Header = "_Clear filters", IsEnabled = filter.IsActive };
+        _filterClearItem.Click += (_, _) => { _vm.ClearFilters(); BuildFilterMenu(); };
+        FilterMenu.Items.Add(_filterClearItem);
+
+        _filterCountItem = new MenuItem { IsEnabled = false };
+        FilterMenu.Items.Add(_filterCountItem);
+        SyncFilterStatusItems();
+    }
+
+    private void DecadeItem_Click(object sender, RoutedEventArgs e)
+    {
+        var item = (MenuItem)sender;
+        var decade = (int)item.Tag;
+        _vm.ToggleDecade(decade);
+        item.IsChecked = _vm.ActiveFilter.Decades.Contains(decade); // honor a rejected (0-match) toggle
+        SyncFilterStatusItems();
+    }
+
+    private void ManufacturerItem_Click(object sender, RoutedEventArgs e)
+    {
+        var item = (MenuItem)sender;
+        var name = (string)item.Tag;
+        _vm.ToggleManufacturer(name);
+        item.IsChecked = _vm.ActiveFilter.Manufacturers.Contains(name);
+        SyncFilterStatusItems();
+    }
+
+    private void OpenManufacturerPicker()
+    {
+        var dialog = new ManufacturerFilterWindow(_vm.AvailableManufacturers, _vm.ActiveFilter.Manufacturers) { Owner = this };
+        if (dialog.ShowDialog() == true)
+        {
+            _vm.SetManufacturers(dialog.SelectedManufacturers);
+            BuildFilterMenu(); // reflect the new selection on next open
+        }
+    }
+
+    private void SyncFilterStatusItems()
+    {
+        if (_filterClearItem is not null)
+            _filterClearItem.IsEnabled = _vm.ActiveFilter.IsActive;
+        if (_filterCountItem is not null)
+            _filterCountItem.Header = _vm.ActiveFilter.IsActive
+                ? $"{_vm.FilteredGameCount} games match"
+                : $"{_vm.FilteredGameCount} games (no filter)";
     }
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)

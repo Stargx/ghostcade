@@ -29,4 +29,15 @@ public sealed record GameEntry(
     int Rotate)
 {
     public bool IsVertical => Rotate is 90 or 270;
+
+    /// <summary>The decade this game's year falls in (e.g. 1980 for the 1980s), or
+    /// null when the year is unknown or too vague ("????", "19??"). A partial year
+    /// like "198?" still resolves to 1980.</summary>
+    public int? DecadeStart()
+    {
+        if (Year.Length < 3) return null;
+        for (int i = 0; i < 3; i++)
+            if (!char.IsDigit(Year[i])) return null;
+        return int.Parse(Year.AsSpan(0, 3)) * 10;
+    }
 }
