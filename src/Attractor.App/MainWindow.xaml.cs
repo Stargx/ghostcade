@@ -1,3 +1,4 @@
+using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -181,6 +182,20 @@ public partial class MainWindow : Window
     /// to zero windows and exits under ShutdownMode=OnLastWindowClose.</summary>
     private void RelaunchFromConfig()
     {
+        // Switching collections resets the shuffle cycle. The saved bag is the old
+        // library's remaining queue; a (largely-overlapping) new ROM set would
+        // otherwise resume that stale list instead of starting fresh. Safe to clear
+        // here — the old engine is already stopped, so nothing rewrites the file.
+        try
+        {
+            if (File.Exists(_paths.RotationStateFile))
+                File.Delete(_paths.RotationStateFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            App.Log.Warn("couldn't clear rotation state on re-setup", ex);
+        }
+
         try
         {
             var config = ConfigStore.Load(_paths.ConfigFile);
