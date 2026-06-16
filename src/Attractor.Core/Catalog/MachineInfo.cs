@@ -26,7 +26,8 @@ public sealed record GameEntry(
     string Manufacturer,
     DriverStatus Driver,
     VerifyResult Verify,
-    int Rotate)
+    int Rotate,
+    string? CloneOf = null)
 {
     public bool IsVertical => Rotate is 90 or 270;
 

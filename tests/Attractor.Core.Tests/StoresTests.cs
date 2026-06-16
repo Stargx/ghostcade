@@ -27,6 +27,48 @@ public class StoresTests : IDisposable
     }
 
     [Fact]
+    public void TagStore_reads_first_column_as_tag_and_formatter_enriches_writes()
+    {
+        var path = PathOf("favorites.txt");
+        File.WriteAllText(path, "galaga\tGalaga (Namco)\t\\\\share\\roms\n1942\n"); // enriched + legacy
+        var store = new FileTagStore(path);
+        Assert.True(store.Contains("galaga")); // first column is the tag
+        Assert.True(store.Contains("1942"));   // legacy plain line still works
+
+        store.LineFormatter = name => $"{name}\tTITLE-{name}\tC:\\roms"; // rewrites existing entries
+        store.Add("dkong");
+
+        var lines = File.ReadAllLines(path);
+        Assert.Contains("dkong\tTITLE-dkong\tC:\\roms", lines);
+        Assert.Contains("galaga\tTITLE-galaga\tC:\\roms", lines);
+
+        var reloaded = new FileTagStore(path); // reloads by tag despite the extra columns
+        Assert.True(reloaded.Contains("dkong"));
+        Assert.True(reloaded.Contains("galaga"));
+    }
+
+    [Fact]
+    public void TagStore_without_formatter_stays_plain()
+    {
+        var path = PathOf("banned.txt");
+        var store = new FileTagStore(path);
+        store.Add("pacman");
+        Assert.Equal(["pacman"], File.ReadAllLines(path));
+    }
+
+    [Fact]
+    public void TagStore_formatter_does_not_create_an_empty_file()
+    {
+        var path = PathOf("favorites.txt"); // does not exist yet
+        var store = new FileTagStore(path);
+        store.LineFormatter = n => $"{n}\tTITLE\tC:\\roms";
+        Assert.False(File.Exists(path)); // nothing favourited — no file materialised
+
+        store.Add("galaga"); // first real entry writes it, enriched
+        Assert.Equal(["galaga\tTITLE\tC:\\roms"], File.ReadAllLines(path));
+    }
+
+    [Fact]
     public void Config_defaults_when_missing_and_roundtrips()
     {
         var path = PathOf("config.json");

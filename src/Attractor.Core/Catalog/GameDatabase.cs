@@ -50,7 +50,8 @@ public sealed class GameDatabase
                 m.Manufacturer ?? "unknown",
                 m.Driver,
                 verified[m.Name],
-                m.Rotate);
+                m.Rotate,
+                m.CloneOf);
         return new GameDatabase(entries, banned, favorites);
     }
 }

@@ -31,12 +31,22 @@ public static class MameVerbRunner
         string mameExePath, string[] args, Action<string> onLine, CancellationToken ct)
     {
         using var proc = Start(mameExePath, args);
-        // drain stderr so a chatty MAME can't fill the pipe and deadlock
-        var drainErr = proc.StandardError.ReadToEndAsync(ct);
-        while (await proc.StandardOutput.ReadLineAsync(ct).ConfigureAwait(false) is { } line)
-            onLine(line);
-        await proc.WaitForExitAsync(ct).ConfigureAwait(false);
-        _ = await drainErr.ConfigureAwait(false);
-        return proc.ExitCode;
+        try
+        {
+            // drain stderr so a chatty MAME can't fill the pipe and deadlock
+            var drainErr = proc.StandardError.ReadToEndAsync(ct);
+            while (await proc.StandardOutput.ReadLineAsync(ct).ConfigureAwait(false) is { } line)
+                onLine(line);
+            await proc.WaitForExitAsync(ct).ConfigureAwait(false);
+            _ = await drainErr.ConfigureAwait(false);
+            return proc.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            // cancellation/timeout: actually terminate the verb process, don't orphan it
+            try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+            throw;
+        }
     }
 }

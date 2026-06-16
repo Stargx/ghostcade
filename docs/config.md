@@ -69,7 +69,7 @@ on without that one.
 | `verify-cache.json` | Cached `-verifyroms` results |
 | `rotation-state.json` | Where the shuffle cycle is up to (so it resumes) |
 | `banned.txt` | One short name per line — hand-editable |
-| `favorites.txt` | One short name per line |
+| `favorites.txt` | Tab-separated `shortname` · `title` · `rom folder` (so you can find and play favourites later); only the first column is read back, and plain one-name-per-line entries still work |
 | `placement.json` | Last window position/size |
 | `logs\attractor-YYYYMMDD.log` | Daily rolling log (7 days kept) |
 

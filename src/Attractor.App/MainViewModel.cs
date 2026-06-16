@@ -140,12 +140,18 @@ public sealed partial class MainViewModel : ObservableObject
             StageMessage = forceRescan ? "RESCANNING…" : "LOADING CATALOG…";
             try
             {
-                _db = await Task.Run(() => CatalogBuilder.BuildAsync(
-                    mameExe, _paths.MachinesCacheFile, _paths.VerifyCacheFile,
-                    new FileTagStore(_paths.BannedFile), new FileTagStore(_paths.FavoritesFile),
-                    new Progress<ScanProgress>(p => _dispatcher.BeginInvoke(() =>
-                        StageMessage = $"SCANNING: {p.Stage} {p.Count}…")),
-                    forceRescan, _cts.Token));
+                _db = await Task.Run(async () =>
+                {
+                    var banned = new FileTagStore(_paths.BannedFile);
+                    var favorites = new FileTagStore(_paths.FavoritesFile);
+                    var db = await CatalogBuilder.BuildAsync(
+                        mameExe, _paths.MachinesCacheFile, _paths.VerifyCacheFile, banned, favorites,
+                        new Progress<ScanProgress>(p => _dispatcher.BeginInvoke(() =>
+                            StageMessage = $"SCANNING: {p.Stage} {p.Count}…")),
+                        forceRescan, _cts.Token);
+                    await EnrichFavoritesAsync(db, favorites, mameExe);
+                    return db;
+                });
             }
             catch (Exception ex)
             {
@@ -324,6 +330,32 @@ public sealed partial class MainViewModel : ObservableObject
             .OrderByDescending(m => m.Count).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         CatalogChanged?.Invoke();
+    }
+
+    /// <summary>Give favorites.txt extra columns — title + the folder its ROM lives in —
+    /// so a favorited game can be found and played later. Best-effort: if the rompath
+    /// can't be read, favorites stay as plain shortnames. Runs off the UI thread during
+    /// the catalog build, so the initial enriching rewrite doesn't block; per-game
+    /// folder lookups are cached so later toggles are cheap.</summary>
+    private async Task EnrichFavoritesAsync(GameDatabase db, FileTagStore favorites, string mameExe)
+    {
+        try
+        {
+            var romDirs = await MameConfig.GetRomPathsAsync(mameExe, _config.Mame.ExtraArgs, _cts.Token);
+            var folderCache = new Dictionary<string, string>(StringComparer.Ordinal);
+            favorites.LineFormatter = name =>
+            {
+                var entry = db.Find(name);
+                if (!folderCache.TryGetValue(name, out var folder))
+                    folderCache[name] = folder = MameConfig.ResolveRomFolder(romDirs, name, entry?.CloneOf);
+                return $"{name}\t{entry?.Title ?? name}\t{folder}";
+            };
+        }
+        catch (OperationCanceledException) { /* shutting down — leave favorites as they are */ }
+        catch (Exception ex)
+        {
+            _log.Warn("couldn't resolve rompath; favorites left as plain names", ex);
+        }
     }
 
     private void PersistFilter()
@@ -551,11 +583,19 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Favorite()
+    private async Task Favorite()
     {
         var game = _engine?.CurrentGame;
         if (game is null || _db is null) return;
-        _db.Favorites.Toggle(game);
+        var favorites = _db.Favorites;
+        // Off the UI thread: persisting a favourite enriches the line, which can probe
+        // the rompath (a network share) and rewrites the file. I/O failure is non-fatal,
+        // like the other persisted state (SaveBagState / PersistFilter).
+        try { await Task.Run(() => favorites.Toggle(game)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warn("couldn't persist favourite", ex);
+        }
         UpdateFavoriteVisuals(game);
     }
 
