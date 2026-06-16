@@ -343,12 +343,21 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var romDirs = await MameConfig.GetRomPathsAsync(mameExe, _config.Mame.ExtraArgs, _cts.Token);
             var folderCache = new Dictionary<string, string>(StringComparer.Ordinal);
-            favorites.LineFormatter = name =>
+            favorites.Formatter = tags =>
             {
-                var entry = db.Find(name);
-                if (!folderCache.TryGetValue(name, out var folder))
-                    folderCache[name] = folder = MameConfig.ResolveRomFolder(romDirs, name, entry?.CloneOf);
-                return $"{name}\t{entry?.Title ?? name}\t{folder}";
+                if (tags.Count == 0)
+                    return [];
+                var rows = tags.Select(name =>
+                {
+                    var entry = db.Find(name);
+                    if (!folderCache.TryGetValue(name, out var folder))
+                        folderCache[name] = folder = MameConfig.ResolveRomFolder(romDirs, name, entry?.CloneOf);
+                    return (name, title: entry?.Title ?? name, folder);
+                }).ToArray();
+                // Pad each column to its widest entry so the columns line up as text.
+                int nameW = rows.Max(r => r.name.Length);
+                int titleW = rows.Max(r => r.title.Length);
+                return rows.Select(r => $"{r.name.PadRight(nameW)}  {r.title.PadRight(titleW)}  {r.folder}");
             };
         }
         catch (OperationCanceledException) { /* shutting down — leave favorites as they are */ }

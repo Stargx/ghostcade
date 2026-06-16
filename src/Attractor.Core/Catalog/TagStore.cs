@@ -21,7 +21,7 @@ public sealed class FileTagStore : ITagStore
     private readonly string _path;
     private readonly HashSet<string> _names = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
-    private Func<string, string>? _lineFormatter;
+    private Func<IReadOnlyList<string>, IEnumerable<string>>? _formatter;
 
     public FileTagStore(string path)
     {
@@ -35,37 +35,40 @@ public sealed class FileTagStore : ITagStore
             }
     }
 
-    // The tag is the first tab-separated column, so a line may carry extra columns
-    // (e.g. favorites append the title + rom folder) without confusing the set. A
-    // plain single-column line — every banned.txt line, and legacy favorites — is
-    // the tag itself.
+    // The tag is the first whitespace-delimited token, so a line may carry extra
+    // space- or tab-separated columns (favorites append title + rom folder) without
+    // confusing the set. A bare single-token line — every banned.txt line, and legacy
+    // favorites — is the tag itself.
     private static string KeyOf(string line)
     {
-        var trimmed = line.Trim();
-        int tab = trimmed.IndexOf('\t');
-        return (tab < 0 ? trimmed : trimmed[..tab]).Trim();
+        var t = line.TrimStart();
+        int i = 0;
+        while (i < t.Length && !char.IsWhiteSpace(t[i]))
+            i++;
+        return t[..i];
     }
 
     /// <summary>
-    /// Optional formatter mapping a tag to the full line written to disk — e.g.
-    /// favorites append "\t{title}\t{rom folder}". Default writes the bare tag, so
-    /// banned.txt stays plain. Assigning it rewrites the file so existing entries
-    /// pick up the extra columns immediately.
+    /// Optional formatter turning the sorted tag set into the lines written to disk —
+    /// favorites use it to render aligned `shortname  title  rom folder` columns
+    /// (it needs the whole set to size each column). Default (null) writes bare tags,
+    /// so banned.txt stays plain. Assigning it rewrites the file when the result
+    /// differs, so existing entries pick up the columns; it won't create an empty file.
     /// </summary>
-    public Func<string, string>? LineFormatter
+    public Func<IReadOnlyList<string>, IEnumerable<string>>? Formatter
     {
-        get { lock (_lock) return _lineFormatter; }
+        get { lock (_lock) return _formatter; }
         set
         {
             lock (_lock)
             {
-                _lineFormatter = value;
+                _formatter = value;
                 // Only rewrite when it would actually change the file: don't create an
                 // empty file for someone who never favourited anything, and don't churn
                 // (or clobber a hand-edited order) on every launch when nothing differs.
                 if (_names.Count == 0 && !File.Exists(_path))
                     return;
-                var desired = _names.Order(StringComparer.Ordinal).Select(Format).ToArray();
+                var desired = Render();
                 if (!File.Exists(_path) || !File.ReadAllLines(_path).SequenceEqual(desired, StringComparer.Ordinal))
                     Save();
             }
@@ -113,10 +116,13 @@ public sealed class FileTagStore : ITagStore
         get { lock (_lock) return _names.ToArray(); }
     }
 
-    private void Save() =>
-        AtomicFile.WriteAllLines(_path, _names.Order(StringComparer.Ordinal).Select(Format));
+    private void Save() => AtomicFile.WriteAllLines(_path, Render());
 
-    private string Format(string name) => _lineFormatter?.Invoke(name) ?? name;
+    private string[] Render()
+    {
+        var tags = _names.Order(StringComparer.Ordinal).ToArray();
+        return (_formatter?.Invoke(tags) ?? tags).ToArray();
+    }
 }
 
 /// <summary>Test/ephemeral implementation.</summary>

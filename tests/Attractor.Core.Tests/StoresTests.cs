@@ -27,22 +27,26 @@ public class StoresTests : IDisposable
     }
 
     [Fact]
-    public void TagStore_reads_first_column_as_tag_and_formatter_enriches_writes()
+    public void TagStore_reads_first_token_as_tag_and_formatter_aligns_columns()
     {
         var path = PathOf("favorites.txt");
-        File.WriteAllText(path, "galaga\tGalaga (Namco)\t\\\\share\\roms\n1942\n"); // enriched + legacy
+        File.WriteAllText(path, "galaga\tGalaga (Namco)\t\\\\share\\roms\n1942\n"); // legacy tab + plain
         var store = new FileTagStore(path);
-        Assert.True(store.Contains("galaga")); // first column is the tag
+        Assert.True(store.Contains("galaga")); // first token is the tag, even with extra columns
         Assert.True(store.Contains("1942"));   // legacy plain line still works
 
-        store.LineFormatter = name => $"{name}\tTITLE-{name}\tC:\\roms"; // rewrites existing entries
+        // whole-set formatter padding the tag column to the widest tag
+        store.Formatter = tags =>
+        {
+            int w = tags.Max(t => t.Length);
+            return tags.Select(t => $"{t.PadRight(w)}  X");
+        };
         store.Add("dkong");
 
-        var lines = File.ReadAllLines(path);
-        Assert.Contains("dkong\tTITLE-dkong\tC:\\roms", lines);
-        Assert.Contains("galaga\tTITLE-galaga\tC:\\roms", lines);
+        // tags sorted ordinal: 1942, dkong, galaga; widest = "galaga" (6) -> X aligns at col 8
+        Assert.Equal(["1942    X", "dkong   X", "galaga  X"], File.ReadAllLines(path));
 
-        var reloaded = new FileTagStore(path); // reloads by tag despite the extra columns
+        var reloaded = new FileTagStore(path); // reloads by first token despite the padding
         Assert.True(reloaded.Contains("dkong"));
         Assert.True(reloaded.Contains("galaga"));
     }
@@ -61,11 +65,11 @@ public class StoresTests : IDisposable
     {
         var path = PathOf("favorites.txt"); // does not exist yet
         var store = new FileTagStore(path);
-        store.LineFormatter = n => $"{n}\tTITLE\tC:\\roms";
+        store.Formatter = tags => tags.Select(t => $"{t}  Z");
         Assert.False(File.Exists(path)); // nothing favourited — no file materialised
 
-        store.Add("galaga"); // first real entry writes it, enriched
-        Assert.Equal(["galaga\tTITLE\tC:\\roms"], File.ReadAllLines(path));
+        store.Add("galaga"); // first real entry writes it, formatted
+        Assert.Equal(["galaga  Z"], File.ReadAllLines(path));
     }
 
     [Fact]
