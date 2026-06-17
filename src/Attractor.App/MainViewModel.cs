@@ -28,6 +28,9 @@ public sealed partial class MainViewModel : ObservableObject
     private GameDatabase? _db;
     private RotationEngine? _engine;
     private ArtLocator? _art;
+    // Resolving the rompath may spawn `mame -showconfig`; both favorites enrichment
+    // and history lookup need it, and they run sequentially per build, so memoize it.
+    private (string Exe, IReadOnlyList<string> Dirs)? _romDirsCache;
     private IntPtr _ownerHwnd;
     private Func<PixelRect>? _hostRect;
     private int _currentPid;
@@ -290,6 +293,9 @@ public sealed partial class MainViewModel : ObservableObject
         StatusMessage = !filter.IsActive ? "Filter cleared"
             : eligible > 0 ? $"Filter active — {eligible} games"
             : "No games match this filter — rotation paused";
+        // Refresh the pool count under the countdown now: widening a filter leaves the
+        // current game playing (no GameChanged), so otherwise the count stays stale.
+        UpdateQueueText();
 
         // Steer the engine: Nudge() wakes it if it was idle on an empty pool (no-op
         // while a game plays); Skip() jumps off a current game that no longer matches.
@@ -302,6 +308,11 @@ public sealed partial class MainViewModel : ObservableObject
                 engine.Skip();
         }
     }
+
+    // The "game N this session · pool M" line under the countdown. Recomputed on every
+    // game change and whenever the filter changes the pool. Must run on the UI thread.
+    private void UpdateQueueText() =>
+        QueueText = $"game {_gamesShown} this session · pool {_db?.RotationPool().Count ?? 0}";
 
     private void ApplyStartupFilter()
     {
@@ -341,7 +352,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            var romDirs = await MameConfig.GetRomPathsAsync(mameExe, _config.Mame.ExtraArgs, _cts.Token);
+            var romDirs = await GetRomDirsAsync(mameExe).ConfigureAwait(false);
             var folderCache = new Dictionary<string, string>(StringComparer.Ordinal);
             favorites.Formatter = tags =>
             {
@@ -410,12 +421,57 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task LoadHistoryAsync(string mameExe)
     {
-        var path = Path.Combine(Path.GetDirectoryName(mameExe)!, "history.dat");
         var wanted = _db!.All.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
-        var history = await Task.Run(() => HistoryDat.LoadAsync(path, wanted, ct: _cts.Token));
+        var history = await Task.Run(async () =>
+        {
+            var path = await ResolveHistoryFileAsync(mameExe).ConfigureAwait(false);
+            if (path is null)
+            {
+                _log.Info("no history file found (history.xml / history.dat) — side-panel trivia disabled");
+                return new Dictionary<string, string>(StringComparer.Ordinal);
+            }
+            _log.Info($"loading history: {path}");
+            return await HistoryDat.LoadAsync(path, wanted, ct: _cts.Token).ConfigureAwait(false);
+        });
         _history = history;
         if (_engine?.CurrentGame is { } current)
             AboutText = _history.GetValueOrDefault(current, "");
+    }
+
+    // MAME has no single canonical home for history.xml/.dat: it may sit next to
+    // mame.exe, in a "history" subfolder, or alongside the ROMs (MAME's own UI
+    // reads it relative to the rompath). Search all of those; HistoryDat.FindFile
+    // prefers a modern history.xml over the classic .dat within each location.
+    private async Task<string?> ResolveHistoryFileAsync(string mameExe)
+    {
+        var mameDir = Path.GetDirectoryName(mameExe)!;
+        var dirs = new List<string> { mameDir, Path.Combine(mameDir, "history") };
+        try
+        {
+            foreach (var d in await GetRomDirsAsync(mameExe).ConfigureAwait(false))
+            {
+                dirs.Add(d);
+                dirs.Add(Path.Combine(d, "history"));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.Warn($"history: rompath probe failed ({ex.Message}); searching the MAME folder only");
+        }
+        return HistoryDat.FindFile(dirs);
+    }
+
+    // Effective MAME rompaths, resolved once per (re)build. EnrichFavoritesAsync runs
+    // to completion inside the catalog Task.Run before LoadHistoryAsync starts, so this
+    // is never hit concurrently; the Exe guard refreshes it if the MAME path changes.
+    private async Task<IReadOnlyList<string>> GetRomDirsAsync(string mameExe)
+    {
+        if (_romDirsCache is { } cached && cached.Exe == mameExe)
+            return cached.Dirs;
+        var dirs = await MameConfig.GetRomPathsAsync(mameExe, _config.Mame.ExtraArgs, _cts.Token)
+            .ConfigureAwait(false);
+        _romDirsCache = (mameExe, dirs);
+        return dirs;
     }
 
     public async Task ShutdownAsync()
@@ -450,7 +506,7 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateFavoriteVisuals(game);
 
         _gamesShown++;
-        QueueText = $"game {_gamesShown} this session · pool {_db.RotationPool().Count}";
+        UpdateQueueText();
         _gameDeadline = DateTimeOffset.Now.AddSeconds(_config.Rotation.DwellSeconds);
         StageMessage = "";
         StatusMessage = "";

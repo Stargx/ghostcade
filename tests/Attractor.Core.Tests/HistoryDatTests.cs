@@ -46,4 +46,54 @@ public class HistoryDatTests : IDisposable
     [Fact]
     public async Task Missing_file_returns_empty() =>
         Assert.Empty(await HistoryDat.LoadAsync(_file + ".nope", new HashSet<string> { "g" }));
+
+    [Fact]
+    public async Task Parses_modern_history_xml_for_wanted_systems_and_clones()
+    {
+        // Detected as XML by the leading '<' (the temp file's extension is .tmp).
+        File.WriteAllText(_file, """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <history version="2.88">
+                <entry>
+                    <software>
+                        <item list="nes" name="ignored" />
+                    </software>
+                    <text>A software-list cart that must not load.</text>
+                </entry>
+                <entry>
+                    <systems>
+                        <system name="galaga" game="yes" />
+                        <system name="galagao" game="yes" />
+                    </systems>
+                    <text>Galaga (c) 1981 Namco.
+
+                    The legendary fixed shooter &amp; sequel to Galaxian.</text>
+                </entry>
+                <entry>
+                    <systems>
+                        <system name="unwanted" />
+                    </systems>
+                    <text>Should not be loaded.</text>
+                </entry>
+            </history>
+            """);
+
+        var result = await HistoryDat.LoadAsync(_file, new HashSet<string> { "galaga", "galagao", "1942" });
+
+        Assert.Equal(2, result.Count);
+        Assert.StartsWith("Galaga (c) 1981 Namco.", result["galaga"]);
+        Assert.Contains("legendary fixed shooter & sequel", result["galaga"]); // &amp; decoded
+        Assert.Equal(result["galaga"], result["galagao"]);
+        Assert.False(result.ContainsKey("unwanted")); // wanted-set filtered
+        Assert.False(result.ContainsKey("ignored"));  // <software> ignored, not matched to text
+    }
+
+    [Fact]
+    public async Task Detects_xml_regardless_of_leading_whitespace()
+    {
+        File.WriteAllText(_file, "\n\n   <history><entry><systems><system name=\"pacman\"/></systems>"
+            + "<text>Pac-Man (c) 1980 Namco.</text></entry></history>");
+        var result = await HistoryDat.LoadAsync(_file, new HashSet<string> { "pacman" });
+        Assert.StartsWith("Pac-Man (c) 1980 Namco.", result["pacman"]);
+    }
 }

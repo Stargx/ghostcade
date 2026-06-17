@@ -141,9 +141,10 @@ public partial class SetupWindow : Window
             return $"✓ {what}: {count} images";
         }
 
-        var history = File.Exists(Path.Combine(mameDir, "history.dat"))
-            ? "✓ history.dat found — game trivia will appear in the side panel"
-            : "✗ no history.dat (optional)";
+        var historyFile = HistoryDat.FindFile([mameDir, Path.Combine(mameDir, "history")]);
+        var history = historyFile is not null
+            ? $"✓ {Path.GetFileName(historyFile)} found — game trivia will appear in the side panel"
+            : "✗ no history.xml / history.dat next to MAME (optional; the ROMs folder is also searched at runtime)";
         ArtProbeText.Text = $"{Describe(MarqueeDirBox.Text, "marquees")}\n{Describe(SnapDirBox.Text, "snapshots")}\n{history}";
     }
 
