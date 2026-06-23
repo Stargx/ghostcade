@@ -3,56 +3,81 @@ using System.Runtime.InteropServices;
 namespace Attractor.Core.Windowing;
 
 /// <summary>
-/// Mutes/unmutes a specific process's audio session via WASAPI — instant, no
-/// relaunch, exactly what the volume mixer does. MAME spawns a NEW process per
-/// chunk, so the host re-applies the mute on every WindowReady.
+/// Sets a specific process's volume and mute via its WASAPI audio session —
+/// instant, no relaunch, exactly what the Windows volume mixer's per-app slider
+/// does. Both are scoped to that one process and are independent of the system
+/// master volume. MAME spawns a NEW process per chunk, so the host re-applies the
+/// level on every WindowReady.
 /// </summary>
 public static class ProcessAudio
 {
+    /// <returns>true if the process's session was found and muted/unmuted.</returns>
+    public static bool TrySetMute(int pid, bool mute) =>
+        TryApply(pid, vol => SetMute(vol, mute));
+
+    /// <summary>Sets the process's per-app session volume, 0.0 (silent)–1.0 (full).</summary>
     /// <returns>true if the process's session was found and set.</returns>
-    public static bool TrySetMute(int pid, bool mute)
+    public static bool TrySetVolume(int pid, float level) =>
+        TryApply(pid, vol => SetVolume(vol, level));
+
+    /// <summary>Sets both volume and mute in a single session lookup, so a fresh
+    /// chunk's session is brought to the intended state in one pass.</summary>
+    /// <returns>true if the process's session was found and set.</returns>
+    public static bool TrySetVolumeAndMute(int pid, float level, bool mute) =>
+        TryApply(pid, vol => { SetVolume(vol, level); SetMute(vol, mute); });
+
+    private static void SetVolume(ISimpleAudioVolume volume, float level)
+    {
+        var context = Guid.Empty;
+        volume.SetMasterVolume(Math.Clamp(level, 0f, 1f), ref context);
+    }
+
+    private static void SetMute(ISimpleAudioVolume volume, bool mute)
+    {
+        var context = Guid.Empty;
+        volume.SetMute(mute, ref context);
+    }
+
+    /// <summary>Find the render session owned by <paramref name="pid"/> and run
+    /// <paramref name="action"/> against its volume interface.</summary>
+    /// <returns>true if a matching session was found.</returns>
+    private static bool TryApply(int pid, Action<ISimpleAudioVolume> action)
     {
         try
         {
-            return SetMuteCore(pid, mute);
+            var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            try
+            {
+                enumerator.GetDefaultAudioEndpoint(DataFlowRender, RoleMultimedia, out var device);
+                var iid = typeof(IAudioSessionManager2).GUID;
+                device.Activate(ref iid, ClsCtxAll, IntPtr.Zero, out var managerObj);
+                var manager = (IAudioSessionManager2)managerObj;
+                manager.GetSessionEnumerator(out var sessions);
+                sessions.GetCount(out int count);
+
+                for (int i = 0; i < count; i++)
+                {
+                    sessions.GetSession(i, out var session);
+                    if (session is not IAudioSessionControl2 session2)
+                        continue;
+                    session2.GetProcessId(out uint sessionPid);
+                    if (sessionPid != (uint)pid)
+                        continue;
+                    if (session is not ISimpleAudioVolume volume)
+                        continue;
+                    action(volume);
+                    return true;
+                }
+                return false;
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(enumerator);
+            }
         }
         catch (COMException)
         {
             return false;
-        }
-    }
-
-    private static bool SetMuteCore(int pid, bool mute)
-    {
-        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-        try
-        {
-            enumerator.GetDefaultAudioEndpoint(DataFlowRender, RoleMultimedia, out var device);
-            var iid = typeof(IAudioSessionManager2).GUID;
-            device.Activate(ref iid, ClsCtxAll, IntPtr.Zero, out var managerObj);
-            var manager = (IAudioSessionManager2)managerObj;
-            manager.GetSessionEnumerator(out var sessions);
-            sessions.GetCount(out int count);
-
-            for (int i = 0; i < count; i++)
-            {
-                sessions.GetSession(i, out var session);
-                if (session is not IAudioSessionControl2 session2)
-                    continue;
-                session2.GetProcessId(out uint sessionPid);
-                if (sessionPid != (uint)pid)
-                    continue;
-                if (session is not ISimpleAudioVolume volume)
-                    continue;
-                var context = Guid.Empty;
-                volume.SetMute(mute, ref context);
-                return true;
-            }
-            return false;
-        }
-        finally
-        {
-            Marshal.ReleaseComObject(enumerator);
         }
     }
 
@@ -128,7 +153,7 @@ public static class ProcessAudio
     [Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface ISimpleAudioVolume
     {
-        void NotImpl_SetMasterVolume();
+        void SetMasterVolume(float level, ref Guid eventContext);
         void NotImpl_GetMasterVolume();
         void SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid eventContext);
     }

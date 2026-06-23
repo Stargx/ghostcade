@@ -41,19 +41,37 @@ public sealed class ShuffleBag
                     return game;
             }
 
-            var pool = _pool();
-            if (pool.Count == 0)
+            if (!Refill())
                 return null;
-            // Fisher–Yates: provably uniform (no tie-bias of OrderBy(random)).
-            var shuffled = pool.ToArray();
-            for (int i = shuffled.Length - 1; i > 0; i--)
-            {
-                int j = _random.Next(i + 1);
-                (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
-            }
-            foreach (var game in shuffled)
-                _queue.Enqueue(game);
         }
         return null; // pool exists but everything is excluded
+    }
+
+    /// <summary>Discard the remaining cycle and reshuffle a fresh one from the current pool.
+    /// Call after the pool changes (e.g. a filter toggle) so newly-eligible games enter the
+    /// cycle at once and a persisted <see cref="Snapshot"/> reflects the new pool — rather
+    /// than waiting for the old queue to drain (many hours over a large library).</summary>
+    public void Reshuffle()
+    {
+        _queue.Clear();
+        Refill();
+    }
+
+    /// <summary>Fisher–Yates shuffle of the current pool into the queue (provably uniform,
+    /// no tie-bias of OrderBy(random)). Returns false if the pool is empty.</summary>
+    private bool Refill()
+    {
+        var pool = _pool();
+        if (pool.Count == 0)
+            return false;
+        var shuffled = pool.ToArray();
+        for (int i = shuffled.Length - 1; i > 0; i--)
+        {
+            int j = _random.Next(i + 1);
+            (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+        }
+        foreach (var game in shuffled)
+            _queue.Enqueue(game);
+        return true;
     }
 }

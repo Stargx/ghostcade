@@ -4,9 +4,15 @@ namespace Attractor.Core.Rotation;
 
 public enum RotationState { Stopped, Running, Faulted, Empty }
 
-public enum EngineCommand { Skip, Previous, ToggleHold, Ban, Stop, Reevaluate }
+public enum EngineCommand { Skip, Previous, ToggleHold, Ban, Stop, Reevaluate, Rebag }
 
 public enum GameFaultKind { CrashedAtLaunch, NoWindow, Hung }
+
+/// <summary>Why the rotation moved to a new game. <see cref="Started"/> is the first
+/// game of a session; <see cref="Auto"/> is the dwell elapsing on its own; <see
+/// cref="Manual"/> is a Skip/Previous/Ban; <see cref="Fault"/> is a broken game being
+/// skipped past. Hosts use it e.g. to play a coin chime only on an unattended advance.</summary>
+public enum GameChangeReason { Started, Auto, Manual, Fault }
 
 public sealed record RotationOptions
 {
@@ -19,6 +25,9 @@ public sealed record RotationOptions
     public int WatchdogFactor { get; init; } = 2;
     public int WatchdogBaseSeconds { get; init; } = 60;
 }
+
+/// <summary>The rotation switched to <paramref name="Game"/>; <paramref name="Reason"/> says why.</summary>
+public sealed record GameChange(string Game, GameChangeReason Reason);
 
 /// <summary>A fresh MAME window for the current chunk, ready to be embedded by the host UI.</summary>
 public sealed record MameWindowReady(string Game, int Pid, IntPtr Hwnd, PixelSize NativeClientSize, int ChunkSeconds);

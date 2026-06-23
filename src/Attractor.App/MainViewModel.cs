@@ -22,8 +22,13 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Dispatcher _dispatcher;
     private readonly MameLauncher _launcher = new();
     private readonly IMameWindowEmbedder _embedder;
+    private readonly SoundEffects _sfx;
     private readonly CancellationTokenSource _cts = new();
     private readonly DispatcherTimer _countdownTimer;
+    // Coalesces config writes while the volume slider is dragged (one write ~0.6s
+    // after the last change) instead of writing config.json on every tick.
+    private readonly DispatcherTimer _volumePersistTimer;
+    private bool _volumeDirty;
 
     private GameDatabase? _db;
     private RotationEngine? _engine;
@@ -68,6 +73,11 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private ImageSource? _maskImage;
     [ObservableProperty] private bool _isMuted;
     [ObservableProperty] private bool _isHeld;
+    [ObservableProperty] private double _gameVolume = 1.0;
+    [ObservableProperty] private string _volumeReadout = "";
+
+    // One hotkey press = ±10% of MAME's per-app volume (hotkeys don't auto-repeat).
+    private const double VolumeStep = 0.1;
 
     private Dictionary<string, string> _history = new(StringComparer.Ordinal);
 
@@ -78,8 +88,15 @@ public sealed partial class MainViewModel : ObservableObject
         _log = log ?? NullLog.Instance;
         _dispatcher = Dispatcher.CurrentDispatcher;
         _embedder = config.Window.EmbedMode == "reparent" ? new ReparentEmbedder() : new GlueEmbedder();
+        _sfx = new SoundEffects(config.Sound, _log);
+        // Restore the saved per-app MAME volume (set the field directly so it doesn't
+        // persist/apply during construction — there's no engine or live process yet).
+        _gameVolume = Math.Clamp(config.Mame.Volume, 0.0, 1.0);
+        UpdateVolumeReadout();
         _countdownTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Normal,
             (_, _) => UpdateCountdown(), _dispatcher);
+        _volumePersistTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(600) };
+        _volumePersistTimer.Tick += (_, _) => FlushVolumePersist();
     }
 
     // ---- lifecycle --------------------------------------------------------------
@@ -88,6 +105,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _ownerHwnd = ownerHwnd;
         _hostRect = hostRect;
+        _sfx.PlayIntro(); // startup jingle, while the catalog loads
         return BuildAndStartAsync(forceRescan);
     }
 
@@ -204,7 +222,7 @@ public sealed partial class MainViewModel : ObservableObject
                 filteredOut: name => _db is null || !_db.MatchesFilter(name));
             _log.Info($"catalog ready: {_db.All.Count} games (resumed {savedQueue?.Count ?? 0} in cycle)");
 
-            engine.GameChanged += g => _dispatcher.BeginInvoke(() => OnGameChanged(g));
+            engine.GameChanged += c => _dispatcher.BeginInvoke(() => OnGameChanged(c.Game, c.Reason));
             engine.WindowReady += w => _dispatcher.BeginInvoke(() => OnWindowReady(w));
             engine.GameFaulted += f => _dispatcher.BeginInvoke(() => OnGameFaulted(f));
             engine.HoldChanged += held => _dispatcher.BeginInvoke(() => OnHoldChanged(held));
@@ -256,7 +274,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (_db is null) return;
         var decades = new HashSet<int>(_db.Filter.Decades);
         if (!decades.Add(decade)) decades.Remove(decade);
-        ApplyFilter(new GameFilter(decades, _db.Filter.Manufacturers));
+        ApplyFilter(new GameFilter(decades, _db.Filter.Manufacturers, _db.Filter.FavoritesOnly));
     }
 
     public void ToggleManufacturer(string manufacturer)
@@ -264,14 +282,22 @@ public sealed partial class MainViewModel : ObservableObject
         if (_db is null) return;
         var mans = new HashSet<string>(_db.Filter.Manufacturers, StringComparer.OrdinalIgnoreCase);
         if (!mans.Add(manufacturer)) mans.Remove(manufacturer);
-        ApplyFilter(new GameFilter(_db.Filter.Decades, mans));
+        ApplyFilter(new GameFilter(_db.Filter.Decades, mans, _db.Filter.FavoritesOnly));
     }
 
     /// <summary>Replace the manufacturer selection wholesale (from the picker dialog).</summary>
     public void SetManufacturers(IEnumerable<string> manufacturers)
     {
         if (_db is null) return;
-        ApplyFilter(new GameFilter(_db.Filter.Decades, manufacturers));
+        ApplyFilter(new GameFilter(_db.Filter.Decades, manufacturers, _db.Filter.FavoritesOnly));
+    }
+
+    /// <summary>Toggle the "favourites only" constraint, preserving any decade/manufacturer
+    /// selection it combines with.</summary>
+    public void ToggleFavoritesOnly()
+    {
+        if (_db is null) return;
+        ApplyFilter(new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers, !_db.Filter.FavoritesOnly));
     }
 
     public void ClearFilters()
@@ -297,16 +323,30 @@ public sealed partial class MainViewModel : ObservableObject
         // current game playing (no GameChanged), so otherwise the count stays stale.
         UpdateQueueText();
 
-        // Steer the engine: Nudge() wakes it if it was idle on an empty pool (no-op
-        // while a game plays); Skip() jumps off a current game that no longer matches.
-        // A still-matching current game is left to finish; leftover bag entries are
-        // skipped on the next draw.
+        // Steer the engine. Rebag() reshuffles the cycle from the new pool and persists a
+        // fresh rotation-state snapshot at once, so EVERY filter change — widen included —
+        // surfaces newly-eligible games immediately and the saved cycle reflects the new
+        // pool (not just changes that happen to evict the current game). Nudge() wakes the
+        // loop if it was idle on an empty pool (no-op while a game plays).
+        // Evicting a now-non-matching current game (Skip) is deferred to
+        // EvictCurrentIfFilteredOut, fired when the Filter menu closes — a Skip relaunches
+        // MAME, whose fresh window can steal foreground and dismiss the open menu.
         if (_engine is { } engine)
         {
+            engine.Rebag();
             engine.Nudge();
-            if (engine.CurrentGame is { } current && !_db.MatchesFilter(current))
-                engine.Skip();
         }
+    }
+
+    /// <summary>If the current game no longer passes the active filter, skip to the next
+    /// eligible one. The host calls this when the Filter menu closes (deferred from
+    /// <see cref="ApplyFilter"/>) so the relaunch — which can steal foreground — happens
+    /// only after the menu is gone, never while it is open.</summary>
+    public void EvictCurrentIfFilteredOut()
+    {
+        if (_db is null || _engine is not { } engine) return;
+        if (engine.CurrentGame is { } current && !_db.MatchesFilter(current))
+            engine.Skip();
     }
 
     // The "game N this session · pool M" line under the countdown. Recomputed on every
@@ -317,13 +357,22 @@ public sealed partial class MainViewModel : ObservableObject
     private void ApplyStartupFilter()
     {
         if (_db is null) return;
-        _db.Filter = new GameFilter(_config.Filter.Decades, _config.Filter.Manufacturers);
-        if (_db.Filter.IsActive && _db.RotationPool().Count == 0)
+        _db.Filter = new GameFilter(
+            _config.Filter.Decades, _config.Filter.Manufacturers, _config.Filter.FavoritesOnly);
+
+        // Safety net for a saved filter that can't match THIS catalog (e.g. after switching
+        // ROM sets). Only the decade/manufacturer constraints are catalog-derived, so test
+        // those alone — favourites are mutable user state and an empty favourites pool is a
+        // normal, recoverable idle (the engine waits; starring a game nudges it back). So
+        // "favourites only" is kept even when nothing's favourited yet, and isn't silently
+        // wiped (and persisted off) just because favorites.txt is empty here.
+        var metadata = new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers);
+        if (metadata.IsActive && !_db.All.Any(metadata.Matches))
         {
-            _log.Warn("saved filter matches no games in this catalog — clearing it");
-            _db.Filter = GameFilter.None;
+            _log.Warn("saved year/manufacturer filter matches no games in this catalog — clearing it");
+            _db.Filter = new GameFilter([], [], _db.Filter.FavoritesOnly);
             PersistFilter();
-            StatusMessage = "Saved year/manufacturer filter matched no games here — filter cleared.";
+            StatusMessage = "Saved year/manufacturer filter matched no games here — cleared.";
         }
     }
 
@@ -386,6 +435,7 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 Decades = _db!.Filter.Decades.OrderBy(d => d).ToList(),
                 Manufacturers = _db.Filter.Manufacturers.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).ToList(),
+                FavoritesOnly = _db.Filter.FavoritesOnly,
             },
         };
         // Best-effort, like SaveBagState: a locked/read-only config dir mustn't crash
@@ -477,6 +527,7 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ShutdownAsync()
     {
         _countdownTimer.Stop();
+        FlushVolumePersist(); // commit a slider/hotkey change still inside the debounce window
         _cts.Cancel();
         if (_engine is not null)
             await Task.WhenAny(_engine.StopAsync(), Task.Delay(3000));
@@ -495,8 +546,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ---- engine events (UI thread) ---------------------------------------------
 
-    private void OnGameChanged(string game)
+    private void OnGameChanged(string game, GameChangeReason reason)
     {
+        // The cabinet "drops a coin" when the rotation moves itself on. Skip already
+        // plays the coin from its command (reason Manual), and the startup jingle
+        // covers the first game (Started), so only an unattended dwell-out chimes here.
+        if (reason == GameChangeReason.Auto)
+            _sfx.PlayCoin();
+
         var entry = _db!.Find(game);
         Title = entry?.Title ?? game;
         Year = entry?.Year ?? "";
@@ -547,8 +604,10 @@ public sealed partial class MainViewModel : ObservableObject
             : entry.IsVertical ? new PixelSize(3, 4) : new PixelSize(4, 3);
 
         _embedder.Embed(w.Hwnd, _ownerHwnd, ApplyOrientationNudge(_hostRect()), aspect);
-        if (IsMuted)
-            _ = ApplyMuteWithRetryAsync(w.Pid, true);
+        // Each chunk is a brand-new process with a fresh audio session, so assert the
+        // intended volume + mute every time (Windows may also have remembered a stale
+        // per-app level for mame.exe from a previous run).
+        _ = ApplyAudioWithRetryAsync(w.Pid);
         _ = ClearMaskAfterAsync(w.Game);
     }
 
@@ -591,7 +650,13 @@ public sealed partial class MainViewModel : ObservableObject
         }
         else if (s == RotationState.Empty)
         {
-            StageMessage = "NO GAMES MATCH THE CURRENT FILTER\n\nAdjust it under File → Filter.";
+            // Tailor the notice when the pool is empty purely because "favourites only" is
+            // on but nothing's favourited yet — otherwise it reads like a year/manufacturer
+            // problem and the user has no idea to press the favourite button.
+            bool noFavouritesYet = _db is { } db && db.Filter.FavoritesOnly && db.Favorites.All.Count == 0;
+            StageMessage = noFavouritesYet
+                ? "NO FAVOURITES YET\n\nStar games with the favourite button (Ctrl+Alt+F),\nor switch off Favourites only under File → Filter."
+                : "NO GAMES MATCH THE CURRENT FILTER\n\nAdjust it under File → Filter.";
             CountdownLabel = "PAUSED";
             CountdownValue = "--:--";
         }
@@ -621,26 +686,102 @@ public sealed partial class MainViewModel : ObservableObject
         FavoriteGlyph = fav ? "" : ""; // filled : outline star
     }
 
-    private async Task ApplyMuteWithRetryAsync(int pid, bool mute)
+    private async Task ApplyAudioWithRetryAsync(int pid)
     {
-        // the audio session appears once MAME initializes sound; retry briefly
+        // The audio session only appears once MAME initializes sound; retry briefly.
+        // Volume + mute go in one session lookup so the chunk lands in a consistent state.
         for (int i = 0; i < 12 && pid == _currentPid; i++)
         {
-            if (ProcessAudio.TrySetMute(pid, mute))
+            if (ProcessAudio.TrySetVolumeAndMute(pid, (float)GameVolume, IsMuted))
                 return;
             await Task.Delay(400);
         }
     }
 
+    // Re-derive the side-panel readout. "MUTED" wins over the level so the panel
+    // matches the mute glyph on the transport.
+    private void UpdateVolumeReadout() =>
+        VolumeReadout = IsMuted ? "MAME VOL  MUTED" : $"MAME VOL  {(int)Math.Round(GameVolume * 100)}%";
+
+    // Fires whenever GameVolume changes (hotkeys or the slider drag): refresh the
+    // readout/status and push the level to the live process. Mute is left untouched —
+    // nudging volume while muted just sets what you'll hear once you unmute.
+    partial void OnGameVolumeChanged(double value)
+    {
+        UpdateVolumeReadout();
+        StatusMessage = IsMuted
+            ? "MAME muted (Ctrl+Alt+M to unmute)"
+            : $"MAME volume {(int)Math.Round(value * 100)}%";
+        // Live and immediate: while a game plays the session already exists, so a
+        // single set suffices (the retry loop is only for a freshly-launched chunk).
+        // A dragged slider fires this many times a second — no retry storm, and the
+        // disk write is coalesced below.
+        if (_currentPid != 0)
+            ProcessAudio.TrySetVolumeAndMute(_currentPid, (float)value, IsMuted);
+        ScheduleVolumePersist();
+    }
+
+    private void AdjustVolume(double delta) =>
+        // Round to whole percents so repeated steps don't accumulate float drift.
+        GameVolume = Math.Clamp(Math.Round((GameVolume + delta) * 100) / 100, 0.0, 1.0);
+
+    // Debounce config writes: restart a short timer on each change and only persist
+    // once it settles, so a slider drag doesn't hammer config.json.
+    private void ScheduleVolumePersist()
+    {
+        _volumeDirty = true;
+        _volumePersistTimer.Stop();
+        _volumePersistTimer.Start();
+    }
+
+    private void FlushVolumePersist()
+    {
+        _volumePersistTimer.Stop();
+        if (!_volumeDirty)
+            return;
+        _volumeDirty = false;
+        PersistVolume();
+    }
+
+    // Best-effort, like PersistFilter/SaveBagState: a locked/read-only config dir
+    // must never crash a volume nudge — the level still applies in memory.
+    private void PersistVolume()
+    {
+        _config = _config with { Mame = _config.Mame with { Volume = GameVolume } };
+        try { ConfigStore.Save(_paths.ConfigFile, _config); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warn("couldn't persist volume to config", ex);
+        }
+    }
+
+    /// <summary>Set how long each game runs (the per-game dwell, in seconds). Applies
+    /// from the next game — the one playing keeps the timeout it started with — and is
+    /// persisted to config so it sticks across restarts.</summary>
+    public void SetDwellSeconds(int seconds)
+    {
+        seconds = Math.Max(1, seconds);
+        _config = _config with { Rotation = _config.Rotation with { DwellSeconds = seconds } };
+        _engine?.SetDwellSeconds(seconds);
+        // Best-effort, like PersistFilter/PersistVolume.
+        try { ConfigStore.Save(_paths.ConfigFile, _config); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warn("couldn't persist timeout to config", ex);
+        }
+        StatusMessage = $"Timeout {seconds / 60} min — applies from the next game";
+    }
+
     // ---- commands -----------------------------------------------------------------
 
-    [RelayCommand] private void Previous() => _engine?.Previous();
-    [RelayCommand] private void Skip() => _engine?.Skip();
-    [RelayCommand] private void Hold() => _engine?.ToggleHold();
+    [RelayCommand] private void Previous() { _sfx.PlayClick(); _engine?.Previous(); }
+    [RelayCommand] private void Skip() { _sfx.PlayCoin(); _engine?.Skip(); }
+    [RelayCommand] private void Hold() { _sfx.PlayClick(); _engine?.ToggleHold(); }
 
     [RelayCommand]
     private void Ban()
     {
+        _sfx.PlayClick();
         var game = _engine?.CurrentGame;
         _engine?.Ban();
         if (game is not null)
@@ -650,6 +791,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task Favorite()
     {
+        _sfx.PlayClick();
         var game = _engine?.CurrentGame;
         if (game is null || _db is null) return;
         var favorites = _db.Favorites;
@@ -662,17 +804,44 @@ public sealed partial class MainViewModel : ObservableObject
             _log.Warn("couldn't persist favourite", ex);
         }
         UpdateFavoriteVisuals(game);
+
+        // While "favourites only" is the active filter, starring/un-starring a game
+        // changes the eligible pool — reshuffle the cycle so a newly-starred game joins
+        // it (and an un-starred one drops out at the next draw), wake an idle loop, and
+        // refresh the pool count. The current game keeps playing; if it was un-starred it
+        // rotates out naturally at the next dwell rather than yanking the screen now.
+        if (_db.Filter.FavoritesOnly && _engine is { } engine)
+        {
+            engine.Rebag();
+            engine.Nudge();
+            UpdateQueueText();
+            // Mirror ApplyFilter's immediate feedback so un-starring the last favourite
+            // doesn't leave a silent "pool 0" under a still-playing game (the Empty notice
+            // only appears once the current dwell ends, possibly minutes later).
+            int eligible = _db.RotationPool().Count;
+            StatusMessage = eligible > 0
+                ? $"Favourites only — {eligible} game{(eligible == 1 ? "" : "s")}"
+                : "No favourites match the filter — rotation will pause";
+        }
     }
 
     [RelayCommand]
     private void Mute()
     {
+        _sfx.PlayClick();
         IsMuted = !IsMuted;
         MuteLabel = IsMuted ? "MUTED" : "SOUND ON";
         MuteGlyph = IsMuted ? "" : ""; // muted : speaker
+        UpdateVolumeReadout();
         if (_currentPid != 0)
-            _ = ApplyMuteWithRetryAsync(_currentPid, IsMuted);
+            _ = ApplyAudioWithRetryAsync(_currentPid);
     }
+
+    // Volume is independent of Mute: nudging the level while muted just changes what
+    // you'll hear once you unmute. No SFX click here, so MAME's own audio is what you
+    // hear change. Global hotkeys (Ctrl+Alt and +/-), so they work from your editor.
+    [RelayCommand] private void VolumeUp() => AdjustVolume(VolumeStep);
+    [RelayCommand] private void VolumeDown() => AdjustVolume(-VolumeStep);
 }
 
 /// <summary>A manufacturer and how many catalog games it has, for the filter menu.</summary>

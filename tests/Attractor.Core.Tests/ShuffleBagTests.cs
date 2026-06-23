@@ -74,6 +74,22 @@ public class ShuffleBagTests
     }
 
     [Fact]
+    public void Reshuffle_discards_the_remainder_and_reseeds_from_the_current_pool()
+    {
+        var pool = new List<string> { "a", "b", "c" };
+        var bag = new ShuffleBag(() => pool, new Random(5));
+        bag.Draw(); // deal one; two remain in the cycle
+        Assert.Equal(2, bag.Snapshot().Count);
+
+        pool.Add("d"); // the pool grows (e.g. a widened filter)
+        bag.Reshuffle();
+
+        var snap = bag.Snapshot();
+        Assert.Equal(4, snap.Count);                      // a fresh full cycle...
+        Assert.Equal(pool.ToHashSet(), snap.ToHashSet()); // ...covering the whole new pool
+    }
+
+    [Fact]
     public void Pool_changes_apply_at_refill()
     {
         var pool = new List<string> { "a" };

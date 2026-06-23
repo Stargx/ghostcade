@@ -96,7 +96,7 @@ CatalogBuilder ─▶ GameDatabase ─▶ RotationEngine ─▶ MameLauncher ─
    from the verify join.
 2. **Rotation** (`Rotation/RotationEngine`): one async `RunLoopAsync` owns the
    MAME child process. The host drives it only through a thread-safe
-   `Channel<EngineCommand>` (Skip/Previous/Hold/Ban/Nudge/Stop) and reacts to
+   `Channel<EngineCommand>` (Skip/Previous/Hold/Ban/Nudge/Rebag/Stop) and reacts to
    events. `ShuffleBag` gives no-repeats-until-exhausted (real Fisher–Yates, not
    `OrderBy(random)`); `PlayHistory` backs Prev/Skip; `FaultPolicy` isolates
    broken ROMs/shares.
@@ -179,8 +179,10 @@ coordinates are **physical screen pixels, never WPF DIPs**; the host rect is cap
 corner-to-corner via `PointToScreen` to fold in Per-Monitor-v2 DPI *and* `Viewbox`
 scaling. Aspect ratio comes from the **catalog** (`IsVertical` → 3:4 else 4:3), not
 from measuring the freshly-spawned window (unreliable mid-load). Per-process mute
-(`ProcessAudio`, WASAPI) is re-applied with a retry loop on **every** `WindowReady`
-because each chunk is a new process with a new audio session.
+**and volume** (`ProcessAudio`, WASAPI per-app session — independent of the system
+master volume; `config.mame.volume` 0–1, Volume Up/Down hotkeys) are re-applied
+together with a retry loop on **every** `WindowReady` because each chunk is a new
+process with a new audio session.
 
 **App / MVVM wiring.** `App.xaml` has **no `StartupUri` and no `ShutdownMode`** — the
 default `OnLastWindowClose` is load-bearing: the Setup-Wizard re-run is a full

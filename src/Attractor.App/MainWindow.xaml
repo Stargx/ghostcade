@@ -22,6 +22,14 @@
       <MenuItem x:Name="FilterMenu" Header="F_ilter">
         <MenuItem Header="(loading…)" IsEnabled="False"/>
       </MenuItem>
+      <MenuItem x:Name="TimeoutMenu" Header="_Time out">
+        <MenuItem Header="_1 minute"   IsCheckable="True" Tag="60"  Click="TimeoutItem_Click"/>
+        <MenuItem Header="_2 minutes"  IsCheckable="True" Tag="120" Click="TimeoutItem_Click"/>
+        <MenuItem Header="_3 minutes"  IsCheckable="True" Tag="180" Click="TimeoutItem_Click"/>
+        <MenuItem Header="_5 minutes"  IsCheckable="True" Tag="300" Click="TimeoutItem_Click"/>
+        <MenuItem Header="1_0 minutes" IsCheckable="True" Tag="600" Click="TimeoutItem_Click"/>
+        <MenuItem Header="1_5 minutes" IsCheckable="True" Tag="900" Click="TimeoutItem_Click"/>
+      </MenuItem>
       <MenuItem Header="_Help">
         <MenuItem Header="_About Attractor" Click="AboutMenu_Click"/>
       </MenuItem>
@@ -236,6 +244,26 @@
           </Grid>
         </Viewbox>
       </Grid>
+
+      <!-- Floating MAME-volume control, hovering just above the SOUND ON (mute)
+           button over the dead space beside the screen. Full layout only — the
+           code-behind hides it in slim mode (the screen widens into this spot);
+           Ctrl+Alt + / - and the status line cover slim. -->
+      <Border x:Name="VolumeOverlay" Grid.Row="1" Panel.ZIndex="50"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,42,10"
+              Width="218" Padding="14,8,14,10"
+              Background="#E60C0C13" BorderBrush="{StaticResource NeonCyan}" BorderThickness="1.5"
+              CornerRadius="10">
+        <Border.Effect>
+          <DropShadowEffect Color="{StaticResource CyanColor}" BlurRadius="16" ShadowDepth="0" Opacity="0.45"/>
+        </Border.Effect>
+        <StackPanel>
+          <TextBlock Text="{Binding VolumeReadout}" FontFamily="{StaticResource PixelFont}" FontSize="9"
+                     Foreground="{StaticResource NeonCyan}" HorizontalAlignment="Center"/>
+          <Slider Style="{StaticResource NeonSlider}" Value="{Binding GameVolume, Mode=TwoWay}"
+                  Margin="0,9,0,0" ToolTip="MAME volume — independent of Windows system volume (Ctrl+Alt + / -)"/>
+        </StackPanel>
+      </Border>
     </Grid>
   </DockPanel>
 </Window>

@@ -14,6 +14,7 @@ public sealed record AppConfig
     public HotkeysSection Hotkeys { get; init; } = new();
     public WindowSection Window { get; init; } = new();
     public FilterSection Filter { get; init; } = new();
+    public SoundSection Sound { get; init; } = new();
 
     public sealed record MameSection
     {
@@ -21,6 +22,13 @@ public sealed record AppConfig
         public List<string> ExtraArgs { get; init; } = [];
         /// <summary>Passed to MAME as -volume (dB attenuation, 0 = full).</summary>
         public int VolumeAttenuation { get; init; } = 0;
+        /// <summary>
+        /// Live volume of MAME's own audio session, 0.0 (silent)–1.0 (full), applied
+        /// through the Windows per-app mixer (WASAPI) — independent of the system
+        /// master volume and of <see cref="VolumeAttenuation"/>. Adjusted at runtime
+        /// via the Volume Up/Down hotkeys and re-applied to each fresh chunk.
+        /// </summary>
+        public double Volume { get; init; } = 1.0;
         /// <summary>
         /// Launch dialect: "auto" (detect from the exe at startup), "seconds"
         /// (modern MAME, -seconds_to_run) or "frames" (legacy MAME,
@@ -54,6 +62,8 @@ public sealed record AppConfig
         public string Ban { get; init; } = "Ctrl+Alt+B";
         public string Favorite { get; init; } = "Ctrl+Alt+F";
         public string Mute { get; init; } = "Ctrl+Alt+M";
+        public string VolumeUp { get; init; } = "Ctrl+Alt+OemPlus";
+        public string VolumeDown { get; init; } = "Ctrl+Alt+OemMinus";
     }
 
     public sealed record WindowSection
@@ -63,9 +73,23 @@ public sealed record AppConfig
     }
 
     /// <summary>
+    /// The cabinet's own UI sound effects (startup jingle, coin on skip, click on the
+    /// other buttons). Independent of the Mute button, which only mutes the emulated
+    /// game. Backward compatible: older configs default to enabled.
+    /// </summary>
+    public sealed record SoundSection
+    {
+        /// <summary>Play the UI sound effects at all.</summary>
+        public bool Enabled { get; init; } = true;
+        /// <summary>SFX playback volume, 0.0 (silent) to 1.0 (full).</summary>
+        public double Volume { get; init; } = 0.8;
+    }
+
+    /// <summary>
     /// Restricts the rotation to games matching the chosen decades and/or
-    /// manufacturers (File → Filter). Empty lists = no filter. Backward
-    /// compatible: older configs simply default both to empty.
+    /// manufacturers, optionally to favourites only (File → Filter). Empty lists +
+    /// favouritesOnly false = no filter. Backward compatible: older configs default
+    /// the lists to empty and the switch to off.
     /// </summary>
     public sealed record FilterSection
     {
@@ -73,6 +97,9 @@ public sealed record AppConfig
         public List<int> Decades { get; init; } = [];
         /// <summary>Manufacturer names to include (exact, as MAME reports them); empty = all.</summary>
         public List<string> Manufacturers { get; init; } = [];
+        /// <summary>Restrict the rotation to favourited games (favorites.txt), combined
+        /// (AND) with any decade/manufacturer selection; false = no favourites constraint.</summary>
+        public bool FavoritesOnly { get; init; } = false;
     }
 }
 

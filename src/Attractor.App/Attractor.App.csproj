@@ -11,6 +11,13 @@
   <ItemGroup>
     <Resource Include="assets\fonts\*.ttf" />
     <Resource Include="assets\img\*.jpg" />
+    <Resource Include="assets\img\*.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- UI sound effects, played by MediaPlayer from a file path (see SoundEffects),
+         so they're copied next to the exe rather than embedded as resources. -->
+    <Content Include="assets\audio\*.wav" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -22,7 +29,57 @@
     <AssemblyName>Attractor</AssemblyName>
     <RootNamespace>Attractor.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>assets\img\attractor.ico</ApplicationIcon>
+    <ApplicationIcon>assets\img\icon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- ===== Authenticode code-signing (opt-in) ==================================
+       Off by default, so inner-loop dev builds are untouched. Enable for a release
+       build with a cert installed in the CurrentUser\My store:
+         dotnet build -c Release -p:SignBuild=true -p:SigningCertThumbprint=<SHA1>
+       …or with a PFX (e.g. in CI; pass the password from a secret, never commit it):
+         dotnet build -c Release -p:SignBuild=true `
+           -p:SigningCertPfxPath=cert.pfx -p:SigningCertPassword=$env:CERT_PWD
+       Signs the artefacts we produce (apphost exe + our own managed DLLs) and
+       timestamps them so the signature outlives the certificate. Why this exists and
+       how to get a certificate: docs/signing.md. -->
+  <PropertyGroup>
+    <SignBuild Condition="'$(SignBuild)' == ''">false</SignBuild>
+    <!-- Set empty to skip timestamping (e.g. an offline self-signed test). -->
+    <SigningTimestampUrl Condition="'$(SigningTimestampUrl)' == ''">http://timestamp.digicert.com</SigningTimestampUrl>
+  </PropertyGroup>
+
+  <Target Name="AuthenticodeSign" AfterTargets="Build" Condition="'$(SignBuild)' == 'true'">
+    <!-- Our own outputs; third-party DLLs (CommunityToolkit.Mvvm) are already signed. -->
+    <ItemGroup>
+      <_FilesToSign Include="$(TargetDir)$(AssemblyName).exe" Condition="Exists('$(TargetDir)$(AssemblyName).exe')" />
+      <_FilesToSign Include="$(TargetDir)$(AssemblyName).dll" Condition="Exists('$(TargetDir)$(AssemblyName).dll')" />
+      <_FilesToSign Include="$(TargetDir)Attractor.Core.dll" Condition="Exists('$(TargetDir)Attractor.Core.dll')" />
+    </ItemGroup>
+
+    <!-- Find signtool: explicit -p:SignToolPath wins, else newest Windows SDK x64 copy,
+         else just "signtool.exe" from PATH. -->
+    <ItemGroup>
+      <_SdkSignTool Include="$([System.Environment]::ExpandEnvironmentVariables('%25ProgramFiles(x86)%25'))\Windows Kits\10\bin\**\x64\signtool.exe" />
+    </ItemGroup>
+    <PropertyGroup>
+      <!-- Batches over the matches; the glob enumerates ascending, so the last one wins = newest. -->
+      <_NewestSignTool>%(_SdkSignTool.FullPath)</_NewestSignTool>
+      <SignToolPath Condition="'$(SignToolPath)' == '' and '$(_NewestSignTool)' != ''">$(_NewestSignTool)</SignToolPath>
+      <SignToolPath Condition="'$(SignToolPath)' == ''">signtool.exe</SignToolPath>
+    </PropertyGroup>
+
+    <!-- Cert selector: a store thumbprint takes precedence over a PFX file. -->
+    <PropertyGroup>
+      <_CertArgs Condition="'$(SigningCertThumbprint)' != ''">/sha1 $(SigningCertThumbprint)</_CertArgs>
+      <_CertArgs Condition="'$(_CertArgs)' == '' and '$(SigningCertPfxPath)' != ''">/f "$(SigningCertPfxPath)" /p "$(SigningCertPassword)"</_CertArgs>
+      <_TsaArgs Condition="'$(SigningTimestampUrl)' != ''">/tr "$(SigningTimestampUrl)" /td sha256</_TsaArgs>
+    </PropertyGroup>
+
+    <Error Condition="'$(_CertArgs)' == ''"
+           Text="SignBuild=true but no certificate was given. Pass -p:SigningCertThumbprint=&lt;thumbprint&gt; (a code-signing cert in CurrentUser\My) or -p:SigningCertPfxPath=&lt;path&gt; -p:SigningCertPassword=&lt;pwd&gt;. See docs/signing.md." />
+
+    <Message Importance="high" Text="Authenticode-signing with $(SignToolPath):&#xA;  @(_FilesToSign, '%0A  ')" />
+    <Exec Command="&quot;$(SignToolPath)&quot; sign $(_CertArgs) /fd sha256 $(_TsaArgs) @(_FilesToSign->'&quot;%(FullPath)&quot;', ' ')" />
+  </Target>
 
 </Project>

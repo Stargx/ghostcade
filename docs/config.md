@@ -18,8 +18,13 @@ Attractor is refused rather than overwritten.
     // Extra args appended to every launch — your escape hatch, e.g.
     // ["-rompath", "D:\\roms"] or ["-video", "gdi"].
     "extraArgs": [],
-    // dB attenuation passed to MAME (-volume). 0 = full, negative = quieter.
-    "volumeAttenuation": 0
+    // dB attenuation passed to MAME (-volume) at launch. 0 = full, negative = quieter.
+    "volumeAttenuation": 0,
+    // Live volume of MAME's audio session via the Windows per-app mixer, 0.0–1.0.
+    // Independent of the system master volume (and of volumeAttenuation). Adjust at
+    // runtime with the Volume Up/Down hotkeys; re-applied to each ~5-min chunk and
+    // saved back here.
+    "volume": 1.0
   },
 
   "art": {
@@ -31,6 +36,8 @@ Attractor is refused rather than overwritten.
 
   "rotation": {
     // Seconds per game. Runs as <=299s chunks (see the FAQ on the ~5-min blink).
+    // Also settable live from the Time out menu (1/2/3/5/10/15 min); a change there
+    // is saved here and applies from the next game.
     "dwellSeconds": 300,
     "order": "shuffle"
   },
@@ -42,13 +49,36 @@ Attractor is refused rather than overwritten.
     "hold": "Ctrl+Alt+Down",
     "ban": "Ctrl+Alt+B",
     "favorite": "Ctrl+Alt+F",
-    "mute": "Ctrl+Alt+M"
+    "mute": "Ctrl+Alt+M",
+    "volumeUp": "Ctrl+Alt+OemPlus",
+    "volumeDown": "Ctrl+Alt+OemMinus"
   },
 
   "window": {
     // "glue" (default) keeps the MAME window top-level and owned by the app.
     // "reparent" is a fallback if a MAME build misbehaves when embedded.
     "embedMode": "glue"
+  },
+
+  "filter": {
+    // Restrict the rotation (File → Filter). All three combine with AND; empty
+    // lists + favouritesOnly false = no filter. Also settable live from the menu,
+    // which saves your choice back here.
+    // Decade start years to include (1980 = the 1980s); empty = all years.
+    "decades": [],
+    // Manufacturer names to include, exactly as MAME reports them; empty = all.
+    "manufacturers": [],
+    // Play only games you've favourited (favorites.txt / the Favourite button).
+    "favoritesOnly": false
+  },
+
+  "sound": {
+    // The cabinet's own UI sound effects: a startup jingle, a coin on Skip, and
+    // a click on the other buttons. Independent of the Mute button (which only
+    // mutes the emulated game). Set false for silent operation.
+    "enabled": true,
+    // SFX volume, 0.0 (silent) to 1.0 (full).
+    "volume": 0.8
   }
 }
 ```
@@ -57,9 +87,13 @@ Attractor is refused rather than overwritten.
 
 `Modifier+Modifier+Key`, e.g. `Ctrl+Alt+Right`, `Shift+F9`, `Win+Pause`.
 Modifiers: `Ctrl`, `Alt`, `Shift`, `Win`. The key is any single key name
-(letters, digits, `Left`/`Right`/`Up`/`Down`, `F1`–`F12`, etc.). If a chord is
-already taken by another app, Attractor notes it in the status line and carries
-on without that one.
+(letters, digits, `Left`/`Right`/`Up`/`Down`, `F1`–`F12`, etc.). `OemPlus` and
+`OemMinus` are the `=`/`+` and `-`/`_` keys — the defaults for Volume Up/Down. If a
+chord is already taken by another app, Attractor notes it in the status line and
+carries on without that one.
+
+The Volume Up/Down hotkeys adjust `mame.volume` (above) in 10% steps — MAME's own
+mixer slider, separate from the Windows system volume.
 
 ## Other files in `data\`
 

@@ -67,10 +67,10 @@ static async Task<int> RotateAsync(string mame, string[] rest)
 
     int seen = 0;
     var done = new TaskCompletionSource();
-    engine.GameChanged += g =>
+    engine.GameChanged += c =>
     {
-        var entry = db.Find(g);
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] now showing: {entry?.Title ?? g} ({entry?.Year})");
+        var entry = db.Find(c.Game);
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] now showing: {entry?.Title ?? c.Game} ({entry?.Year}) [{c.Reason}]");
         if (Interlocked.Increment(ref seen) >= games + 1)
             done.TrySetResult();
     };

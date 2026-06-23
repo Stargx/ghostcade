@@ -1,0 +1,64 @@
+<Window x:Class="Attractor.App.AboutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="About Attractor" Width="460" SizeToContent="Height"
+        ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{StaticResource BgDeep}" WindowStartupLocation="CenterOwner">
+
+  <Border Style="{StaticResource NeonFrame}" Margin="14" Padding="24,22">
+    <StackPanel>
+
+      <!-- Optional Cold Beam Games logo. Hidden until a graphic is dropped into
+           assets/img (coldbeam_logo.png or .jpg); see TrySetImage in code-behind. -->
+      <Border x:Name="LogoSlot" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,0,0,16">
+        <Image x:Name="LogoImage" MaxHeight="72" Stretch="Uniform"/>
+      </Border>
+
+      <TextBlock Text="ATTRACTOR" Style="{StaticResource PixelTitle}" HorizontalAlignment="Center"/>
+      <TextBlock x:Name="VersionText" Style="{StaticResource DimText}" FontSize="12"
+                 HorizontalAlignment="Center" Margin="0,6,0,0"/>
+
+      <TextBlock Style="{StaticResource DimText}" Margin="0,16,0,0" TextAlignment="Center" FontSize="12"
+                 Text="Ambient arcade player — your MAME collection on attract-mode rotation while you work."/>
+
+      <!-- ===== Cold Beam Games / Beat Hazard cross-promo ===== -->
+      <Border Style="{StaticResource MetalPanel}" Margin="0,18,0,0" Padding="16,14">
+        <StackPanel>
+          <TextBlock Text="FROM COLD BEAM GAMES" Style="{StaticResource PixelLabel}"
+                     FontSize="10" HorizontalAlignment="Center"/>
+
+          <!-- Optional Beat Hazard promo art (clickable). Hidden until a graphic is
+               dropped into assets/img (beat_hazard.jpg or .png). -->
+          <Border x:Name="BeatHazardSlot" Visibility="Collapsed" Margin="0,12,0,0"
+                  CornerRadius="8" ClipToBounds="True">
+            <Image x:Name="BeatHazardImage" MaxHeight="130" Stretch="Uniform"
+                   Cursor="Hand" MouseLeftButtonUp="BeatHazardImage_MouseUp"/>
+          </Border>
+
+          <TextBlock Style="{StaticResource DimText}" Margin="0,12,0,0" TextAlignment="Center" FontSize="12">
+            <Run Text="Made by the creators of "/><Hyperlink x:Name="BeatHazardLink"
+                  RequestNavigate="Hyperlink_RequestNavigate"
+                  Foreground="{StaticResource NeonMagenta}">Beat Hazard</Hyperlink><Run Text="."/>
+            <LineBreak/>
+            <Run Text="Explore our games at "/><Hyperlink NavigateUri="https://coldbeamgames.com"
+                  RequestNavigate="Hyperlink_RequestNavigate"
+                  Foreground="{StaticResource NeonCyan}">coldbeamgames.com</Hyperlink>
+          </TextBlock>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Style="{StaticResource DimText}" Margin="0,18,0,0" TextAlignment="Center" FontSize="12">
+        <Hyperlink NavigateUri="https://github.com/Stargx/attractor"
+                   RequestNavigate="Hyperlink_RequestNavigate"
+                   Foreground="{StaticResource NeonCyan}">github.com/Stargx/attractor</Hyperlink>
+      </TextBlock>
+
+      <TextBlock Style="{StaticResource DimText}" Margin="0,14,0,0" TextAlignment="Center"
+                 FontSize="10" Opacity="0.8"
+                 Text="MAME is a trademark of its owners. Attractor ships no ROMs, MAME, or game artwork, and is not affiliated with the MAME team."/>
+
+      <Button Content="CLOSE" HorizontalAlignment="Center" Margin="0,20,0,0" Padding="24,8"
+              IsCancel="True" FontFamily="{StaticResource PixelFont}" FontSize="10" Click="Close_Click"/>
+    </StackPanel>
+  </Border>
+</Window>

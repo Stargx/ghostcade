@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -41,7 +40,10 @@ public partial class MainWindow : Window
         _config = config;
         _forceRescan = forceRescan;
         DataContext = vm;
+        SyncTimeoutChecks(config.Rotation.DwellSeconds); // reflect the persisted timeout
         _vm.CatalogChanged += BuildFilterMenu; // raised on the UI thread (see MainViewModel)
+        FilterMenu.SubmenuClosed += FilterMenu_SubmenuClosed; // deferred filter eviction (see handler)
+        FilterMenu.SubmenuOpened += FilterMenu_SubmenuOpened; // refresh the live "N games match" count
 
         WindowPlacement.Restore(this, paths.PlacementFile);
 
@@ -71,6 +73,8 @@ public partial class MainWindow : Window
         _hotkeys.Register(hk.Ban, () => _vm.BanCommand.Execute(null));
         _hotkeys.Register(hk.Favorite, () => _vm.FavoriteCommand.Execute(null));
         _hotkeys.Register(hk.Mute, () => _vm.MuteCommand.Execute(null));
+        _hotkeys.Register(hk.VolumeUp, () => _vm.VolumeUpCommand.Execute(null));
+        _hotkeys.Register(hk.VolumeDown, () => _vm.VolumeDownCommand.Execute(null));
         if (_hotkeys.Failures.Count > 0)
         {
             var msg = "hotkeys unavailable: " + string.Join(", ", _hotkeys.Failures);
@@ -106,6 +110,7 @@ public partial class MainWindow : Window
             PanelColumn.Width = new GridLength(0);
             RightPanel.Visibility = Visibility.Collapsed;
             CountdownChip.Visibility = Visibility.Visible;
+            VolumeOverlay.Visibility = Visibility.Collapsed; // the screen widens into this spot
             // let the cabinet stretch and the window shrink down to ~the game
             // screen width (it no longer needs room for the full-width banner)
             Root.Width = double.NaN;
@@ -122,6 +127,7 @@ public partial class MainWindow : Window
             PanelColumn.Width = new GridLength(391);
             RightPanel.Visibility = Visibility.Visible;
             CountdownChip.Visibility = Visibility.Collapsed;
+            VolumeOverlay.Visibility = Visibility.Visible;
             // full cabinet needs its fixed banner width; lock it
             Root.Width = 1341;
             Root.HorizontalAlignment = HorizontalAlignment.Center;
@@ -219,14 +225,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AboutMenu_Click(object sender, RoutedEventArgs e)
+    private void AboutMenu_Click(object sender, RoutedEventArgs e) =>
+        new AboutWindow { Owner = this }.ShowDialog();
+
+    // ---- timeout menu (how long each game runs) --------------------------------
+
+    private void TimeoutItem_Click(object sender, RoutedEventArgs e)
     {
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "dev";
-        MessageBox.Show(this,
-            $"Attractor v{version}\n\nAmbient arcade player — your MAME collection on attract-mode\n" +
-            "rotation while you work.\n\nhttps://github.com/Stargx/attractor\n\n" +
-            "MAME is a trademark of its owners; Attractor ships no ROMs and is not\naffiliated with the MAME team.",
-            "About Attractor", MessageBoxButton.OK, MessageBoxImage.Information);
+        var seconds = int.Parse((string)((MenuItem)sender).Tag);
+        _vm.SetDwellSeconds(seconds);
+        SyncTimeoutChecks(seconds); // radio behaviour: keep exactly the chosen one checked
+    }
+
+    private void SyncTimeoutChecks(int seconds)
+    {
+        foreach (var obj in TimeoutMenu.Items)
+            if (obj is MenuItem mi && mi.Tag is string tag)
+                mi.IsChecked = int.TryParse(tag, out var s) && s == seconds;
     }
 
     // ---- filter menu (built from the catalog once it's loaded) -----------------
@@ -271,6 +286,14 @@ public partial class MainWindow : Window
         }
         FilterMenu.Items.Add(manMenu);
 
+        var favItem = new MenuItem
+        {
+            Header = "_Favourites only", IsCheckable = true, StaysOpenOnClick = true,
+            IsChecked = filter.FavoritesOnly,
+        };
+        favItem.Click += FavoritesOnlyItem_Click;
+        FilterMenu.Items.Add(favItem);
+
         FilterMenu.Items.Add(new Separator());
         _filterClearItem = new MenuItem { Header = "_Clear filters", IsEnabled = filter.IsActive };
         _filterClearItem.Click += (_, _) => { _vm.ClearFilters(); BuildFilterMenu(); };
@@ -299,6 +322,13 @@ public partial class MainWindow : Window
         SyncFilterStatusItems();
     }
 
+    private void FavoritesOnlyItem_Click(object sender, RoutedEventArgs e)
+    {
+        _vm.ToggleFavoritesOnly();
+        ((MenuItem)sender).IsChecked = _vm.ActiveFilter.FavoritesOnly; // keep the check in sync with the model
+        SyncFilterStatusItems();
+    }
+
     private void OpenManufacturerPicker()
     {
         var dialog = new ManufacturerFilterWindow(_vm.AvailableManufacturers, _vm.ActiveFilter.Manufacturers) { Owner = this };
@@ -306,7 +336,31 @@ public partial class MainWindow : Window
         {
             _vm.SetManufacturers(dialog.SelectedManufacturers);
             BuildFilterMenu(); // reflect the new selection on next open
+            // The modal dialog already closed the Filter menu, so the deferred eviction can
+            // run now — there's no open menu for the relaunch to dismiss.
+            _vm.EvictCurrentIfFilteredOut();
         }
+    }
+
+    // When the whole Filter menu closes, drop the current game if it no longer matches the
+    // active filter. Deferring the Skip to here (rather than firing it from the item-click
+    // handler) keeps the relaunch — whose fresh MAME window can steal foreground — from
+    // dismissing the menu mid-toggle. The guard ignores the bubbled SubmenuClosed of the
+    // nested Decade/Manufacturer submenus, which fire while the Filter menu is still open.
+    private void FilterMenu_SubmenuClosed(object sender, RoutedEventArgs e)
+    {
+        if (FilterMenu.IsSubmenuOpen) return;
+        _vm.EvictCurrentIfFilteredOut();
+    }
+
+    // The pool count can change while the menu is closed — starring/un-starring a game via
+    // the Favourite hotkey when "favourites only" is active — so refresh the "N games match"
+    // line each time the Filter menu opens. OriginalSource discriminates the Filter menu's
+    // own open from the nested Decade/Manufacturer submenus, whose SubmenuOpened bubbles here.
+    private void FilterMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, FilterMenu)) return;
+        SyncFilterStatusItems();
     }
 
     private void SyncFilterStatusItems()

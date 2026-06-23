@@ -34,6 +34,12 @@ public sealed class RotationEngine : IAsyncDisposable
     private IMameProcess? _proc;
     private Task? _loopTask;
     private Navigation _pendingNav = Navigation.Forward;
+    // Why the *next* game will come up — carried into the GameChanged payload. Set as
+    // each game ends; the first game of the session keeps the initial "Started".
+    private GameChangeReason _nextChangeReason = GameChangeReason.Started;
+    // Per-game dwell, re-read at the start of every game so the host can retune it live
+    // (see SetDwellSeconds). volatile: written from the UI thread, read on the loop thread.
+    private volatile int _dwellSeconds;
 
     private enum Navigation { Forward, Back, RestartCurrent }
     private enum ChunkResult { Completed, CommandAdvance, CommandStop, Faulted }
@@ -61,6 +67,7 @@ public sealed class RotationEngine : IAsyncDisposable
         _banned = banned;
         _mameExePath = mameExePath;
         _options = options ?? new RotationOptions();
+        _dwellSeconds = _options.DwellSeconds;
         _finder = finder ?? new GameWindowFinder();
         _time = time ?? TimeProvider.System;
         _extraArgs = extraArgs;
@@ -79,7 +86,7 @@ public sealed class RotationEngine : IAsyncDisposable
     public string? CurrentGame { get; private set; }
     public bool IsHeld { get; private set; }
 
-    public event Action<string>? GameChanged;
+    public event Action<GameChange>? GameChanged;
     public event Action<MameWindowReady>? WindowReady;
     public event Action<RotationState>? StateChanged;
     public event Action<GameFault>? GameFaulted;
@@ -95,6 +102,14 @@ public sealed class RotationEngine : IAsyncDisposable
     /// drawing again; harmlessly ignored while a game is playing. Call after the
     /// filter/bans change so a newly non-empty pool resumes without waiting.</summary>
     public void Nudge() => _commands.Writer.TryWrite(EngineCommand.Reevaluate);
+    /// <summary>Discard the current shuffle cycle and reseed it from the live pool, then
+    /// persist the fresh snapshot. Call after a filter change so widened-in games are dealt
+    /// promptly and rotation-state reflects the new pool. The current game keeps playing —
+    /// evicting a now-ineligible one is the host's separate decision (via <see cref="Skip"/>).</summary>
+    public void Rebag() => _commands.Writer.TryWrite(EngineCommand.Rebag);
+    /// <summary>Retune the per-game dwell on the fly. Takes effect from the next game —
+    /// the one currently playing keeps the timeout it launched with. Thread-safe.</summary>
+    public void SetDwellSeconds(int seconds) => _dwellSeconds = Math.Max(1, seconds);
 
     public Task StartAsync(CancellationToken shutdown)
     {
@@ -145,7 +160,7 @@ public sealed class RotationEngine : IAsyncDisposable
                 SetState(RotationState.Running); // recover if we were idle
                 CurrentGame = game;
                 _log.Info($"now showing: {game}");
-                GameChanged?.Invoke(game);
+                GameChanged?.Invoke(new GameChange(game, _nextChangeReason));
 
                 var outcome = await PlayGameAsync(game, shutdown).ConfigureAwait(false);
                 if (outcome == GameOutcome.Stop)
@@ -219,7 +234,7 @@ public sealed class RotationEngine : IAsyncDisposable
 
     private async Task<GameOutcome> PlayGameAsync(string game, CancellationToken ct)
     {
-        var chunks = ChunkPlanner.Plan(_options.DwellSeconds);
+        var chunks = ChunkPlanner.Plan(_dwellSeconds);
         int index = 0;
         while (index < chunks.Count || IsHeld)
         {
@@ -232,13 +247,18 @@ public sealed class RotationEngine : IAsyncDisposable
                     index++;
                     break;
                 case ChunkResult.CommandAdvance:
+                    _nextChangeReason = GameChangeReason.Manual; // Skip / Previous / Ban
                     return GameOutcome.Advance;
                 case ChunkResult.CommandStop:
                     return GameOutcome.Stop;
                 case ChunkResult.Faulted:
-                    return _lastVerdict == FaultVerdict.EngineFaulted ? GameOutcome.EngineFault : GameOutcome.Advance;
+                    if (_lastVerdict == FaultVerdict.EngineFaulted)
+                        return GameOutcome.EngineFault;
+                    _nextChangeReason = GameChangeReason.Fault;
+                    return GameOutcome.Advance;
             }
         }
+        _nextChangeReason = GameChangeReason.Auto; // dwell elapsed on its own
         return GameOutcome.Advance;
     }
 
@@ -313,6 +333,11 @@ public sealed class RotationEngine : IAsyncDisposable
 
                 case EngineCommand.Reevaluate:
                     continue; // only meaningful when idle; the current game plays on
+
+                case EngineCommand.Rebag:
+                    _bag.Reshuffle(); // reseed the cycle from the (re-filtered) pool
+                    _onBagChanged?.Invoke(_bag.Snapshot()); // persist the new cycle now
+                    continue; // current game plays on; eviction is a separate Skip
 
                 case EngineCommand.Skip:
                     _pendingNav = Navigation.Forward;

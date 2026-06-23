@@ -227,4 +227,68 @@
     <Setter Property="HorizontalAlignment" Value="Center"/>
   </Style>
 
+  <!-- ============ neon volume slider ============ -->
+  <!-- Filled (cyan) groove to the left of a glowing thumb. Snaps to 5% so a drag
+       lands on clean values and doesn't spam the volume apply. Click-to-position. -->
+  <Style x:Key="NeonSlider" TargetType="Slider">
+    <Setter Property="Minimum" Value="0"/>
+    <Setter Property="Maximum" Value="1"/>
+    <Setter Property="SmallChange" Value="0.05"/>
+    <Setter Property="LargeChange" Value="0.1"/>
+    <Setter Property="TickFrequency" Value="0.05"/>
+    <Setter Property="IsSnapToTickEnabled" Value="True"/>
+    <Setter Property="IsMoveToPointEnabled" Value="True"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Height" Value="20"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Slider">
+          <Grid VerticalAlignment="Center">
+            <Border Height="6" CornerRadius="3" VerticalAlignment="Center"
+                    Background="#FF0B0B12" BorderBrush="{StaticResource PanelEdge}" BorderThickness="1"/>
+            <Track x:Name="PART_Track">
+              <Track.DecreaseRepeatButton>
+                <RepeatButton Focusable="False">
+                  <RepeatButton.Template>
+                    <ControlTemplate TargetType="RepeatButton">
+                      <Border Height="6" CornerRadius="3" VerticalAlignment="Center"
+                              Background="{StaticResource NeonCyan}">
+                        <Border.Effect>
+                          <DropShadowEffect Color="{StaticResource CyanColor}" BlurRadius="8" ShadowDepth="0" Opacity="0.85"/>
+                        </Border.Effect>
+                      </Border>
+                    </ControlTemplate>
+                  </RepeatButton.Template>
+                </RepeatButton>
+              </Track.DecreaseRepeatButton>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Focusable="False">
+                  <RepeatButton.Template>
+                    <ControlTemplate TargetType="RepeatButton">
+                      <Border Background="Transparent"/>
+                    </ControlTemplate>
+                  </RepeatButton.Template>
+                </RepeatButton>
+              </Track.IncreaseRepeatButton>
+              <Track.Thumb>
+                <Thumb Focusable="False">
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                      <Ellipse Width="15" Height="15" Fill="{StaticResource NeonCyan}"
+                               Stroke="White" StrokeThickness="1.25">
+                        <Ellipse.Effect>
+                          <DropShadowEffect Color="{StaticResource CyanColor}" BlurRadius="10" ShadowDepth="0" Opacity="0.95"/>
+                        </Ellipse.Effect>
+                      </Ellipse>
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+            </Track>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
 </ResourceDictionary>

@@ -84,6 +84,41 @@ public class StoresTests : IDisposable
     }
 
     [Fact]
+    public void Config_roundtrips_the_filter_section()
+    {
+        var path = PathOf("config.json");
+        var fresh = ConfigStore.Load(path);
+        Assert.False(fresh.Filter.FavoritesOnly); // defaults off
+        Assert.Empty(fresh.Filter.Decades);
+
+        ConfigStore.Save(path, fresh with
+        {
+            Filter = new AppConfig.FilterSection
+            {
+                Decades = [1980, 1990],
+                Manufacturers = ["Capcom"],
+                FavoritesOnly = true,
+            },
+        });
+
+        var reloaded = ConfigStore.Load(path).Filter;
+        Assert.Equal([1980, 1990], reloaded.Decades);
+        Assert.Equal(["Capcom"], reloaded.Manufacturers);
+        Assert.True(reloaded.FavoritesOnly);
+    }
+
+    [Fact]
+    public void Config_without_a_filter_block_defaults_to_no_filter()
+    {
+        var path = PathOf("config.json");
+        File.WriteAllText(path, """{ "version": 1, "rotation": { "dwellSeconds": 300 } }""");
+        var filter = ConfigStore.Load(path).Filter;
+        Assert.False(filter.FavoritesOnly); // backward compatible: old configs predate the field
+        Assert.Empty(filter.Decades);
+        Assert.Empty(filter.Manufacturers);
+    }
+
+    [Fact]
     public void Config_tolerates_comments_and_refuses_future_versions()
     {
         var path = PathOf("config.json");

@@ -22,17 +22,32 @@ public class RotationEngineTests
         public RotationEngine Engine { get; }
         public List<string> GamesSeen { get; } = [];
         public List<GameFault> Faults { get; } = [];
+        public List<IReadOnlyList<string>> BagSnapshots { get; } = [];
+        // The live pool; mutate under its own lock (the engine reads it on the loop thread).
+        public List<string> Pool { get; }
         public CancellationTokenSource Cts { get; } = new(TimeSpan.FromSeconds(30));
         public Task? LoopTask { get; private set; }
 
         public Harness(string[] pool, RotationOptions? options = null, Func<string, bool>? filteredOut = null)
         {
+            Pool = [.. pool];
             Engine = new RotationEngine(
-                Launcher, () => pool, Banned, @"c:\fake\mame.exe",
-                options ?? FastOptions, new FakeWindowFinder(), random: new Random(42), filteredOut: filteredOut);
-            Engine.GameChanged += g => { lock (GamesSeen) GamesSeen.Add(g); };
+                Launcher, PoolSnapshot, Banned, @"c:\fake\mame.exe",
+                options ?? FastOptions, new FakeWindowFinder(), random: new Random(42),
+                onBagChanged: s => { lock (BagSnapshots) BagSnapshots.Add(s); },
+                filteredOut: filteredOut);
+            Engine.GameChanged += c => { lock (GamesSeen) GamesSeen.Add(c.Game); };
             Engine.GameFaulted += f => { lock (Faults) Faults.Add(f); };
         }
+
+        // Like the real GameDatabase.RotationPool(), hand back a fresh copy so a test can
+        // mutate Pool concurrently with the engine without an enumeration race.
+        private IReadOnlyList<string> PoolSnapshot() { lock (Pool) return Pool.ToArray(); }
+
+        public void WidenPool(params string[] add) { lock (Pool) Pool.AddRange(add); }
+
+        public Task BagPersistedAtLeast(int n) =>
+            Wait.ForAsync(() => { lock (BagSnapshots) return BagSnapshots.Count >= n; }, 15000, $"{n} bag snapshots");
 
         public void Start() => LoopTask = Engine.StartAsync(Cts.Token);
 
@@ -126,6 +141,47 @@ public class RotationEngineTests
         await h.SeenAtLeast(4); // a full cycle plus a reshuffle
         lock (h.GamesSeen)
             Assert.DoesNotContain("b", h.GamesSeen);
+    }
+
+    [Fact]
+    public async Task Rebag_persists_a_fresh_snapshot_without_advancing_the_current_game()
+    {
+        // The original bug: a filter change that did NOT evict the current game (a widen)
+        // never rewrote rotation-state. Rebag must persist a fresh cycle regardless of Skip.
+        await using var h = new Harness(["a", "b", "c"]);
+        h.Launcher.OnLaunch = (_, _) => { }; // current game runs until killed
+        h.Start();
+        await h.SeenAtLeast(1);
+        await h.BagPersistedAtLeast(1); // the initial draw persisted once
+        string current = h.Engine.CurrentGame!;
+        int seenBefore, snapsBefore;
+        lock (h.GamesSeen) seenBefore = h.GamesSeen.Count;
+        lock (h.BagSnapshots) snapsBefore = h.BagSnapshots.Count;
+
+        h.Engine.Rebag();
+
+        await h.BagPersistedAtLeast(snapsBefore + 1);   // Rebag persisted a fresh cycle...
+        Assert.Equal(current, h.Engine.CurrentGame);    // ...without changing the current game...
+        lock (h.GamesSeen)
+            Assert.Equal(seenBefore, h.GamesSeen.Count); // ...and without advancing (no GameChanged)
+    }
+
+    [Fact]
+    public async Task Rebag_reshuffles_to_include_a_widened_pool()
+    {
+        // A widen must surface the newly-eligible games at once, not after the old queue drains.
+        await using var h = new Harness(["a"]);
+        h.Launcher.OnLaunch = (_, _) => { }; // "a" runs until killed
+        h.Start();
+        await h.SeenAtLeast(1);
+        await h.BagPersistedAtLeast(1);
+
+        h.WidenPool("b", "c");
+        h.Engine.Rebag();
+
+        await Wait.ForAsync(
+            () => { lock (h.BagSnapshots) return h.BagSnapshots[^1].ToHashSet().SetEquals(["a", "b", "c"]); },
+            15000, "rebagged snapshot reflects the widened pool");
     }
 
     [Fact]

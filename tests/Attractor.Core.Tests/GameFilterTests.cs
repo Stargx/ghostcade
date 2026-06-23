@@ -79,4 +79,125 @@ public class GameFilterTests
         db.Banned.Add("a");
         Assert.Equal(["c"], db.RotationPool());
     }
+
+    [Fact]
+    public void FavoritesOnly_makes_the_filter_active_but_is_not_part_of_metadata_match()
+    {
+        var f = new GameFilter([], [], favoritesOnly: true);
+        Assert.True(f.IsActive);
+        // Matches() covers decade/manufacturer only — the favourites gate lives on
+        // GameDatabase (which owns the set), so a non-favourite still passes Matches().
+        Assert.True(f.Matches(Game("g", "1984", "whoever")));
+    }
+
+    [Fact]
+    public void FavoritesOnly_pool_is_restricted_to_favourited_games()
+    {
+        MachineInfo[] machines =
+        [
+            new("a", "A", "1981", "Capcom", false, false, true, null, DriverStatus.Good, 0),
+            new("b", "B", "1991", "Konami", false, false, true, null, DriverStatus.Good, 0),
+            new("c", "C", "1983", "Sega",   false, false, true, null, DriverStatus.Good, 0),
+        ];
+        var verified = machines.ToDictionary(m => m.Name, _ => VerifyResult.Good);
+        var favorites = new InMemoryTagStore();
+        favorites.Add("a");
+        favorites.Add("c");
+        var db = GameDatabase.Assemble(machines, verified, new InMemoryTagStore(), favorites);
+
+        db.Filter = new GameFilter([], [], favoritesOnly: true);
+        Assert.Equal(["a", "c"], db.RotationPool().OrderBy(x => x));
+        Assert.True(db.MatchesFilter("a"));
+        Assert.False(db.MatchesFilter("b")); // not favourited
+    }
+
+    [Fact]
+    public void FavoritesOnly_combines_with_decade_and_bans()
+    {
+        MachineInfo[] machines =
+        [
+            new("a", "A", "1981", "Capcom", false, false, true, null, DriverStatus.Good, 0),
+            new("b", "B", "1991", "Capcom", false, false, true, null, DriverStatus.Good, 0),
+            new("c", "C", "1983", "Konami", false, false, true, null, DriverStatus.Good, 0),
+        ];
+        var verified = machines.ToDictionary(m => m.Name, _ => VerifyResult.Good);
+        var favorites = new InMemoryTagStore();
+        favorites.Add("a");
+        favorites.Add("b"); // favourited but in the wrong decade once we narrow to the 80s
+        var db = GameDatabase.Assemble(machines, verified, new InMemoryTagStore(), favorites);
+
+        // favourites-only AND the 1980s -> only "a" (b is 1991, c isn't favourited)
+        db.Filter = new GameFilter([1980], [], favoritesOnly: true);
+        Assert.Equal(["a"], db.RotationPool());
+        Assert.False(db.MatchesFilter("b")); // favourited but filtered out by decade
+        Assert.False(db.MatchesFilter("c")); // right decade but not favourited
+
+        db.Banned.Add("a"); // ban the only match -> empty pool
+        Assert.Empty(db.RotationPool());
+    }
+
+    [Fact]
+    public void FavoritesOnly_combines_with_manufacturer()
+    {
+        MachineInfo[] machines =
+        [
+            new("a", "A", "1987", "capcom", false, false, true, null, DriverStatus.Good, 0), // fav + Capcom (lower-case pins OrdinalIgnoreCase)
+            new("b", "B", "1987", "Konami", false, false, true, null, DriverStatus.Good, 0), // fav but wrong manufacturer
+            new("c", "C", "1987", "Capcom", false, false, true, null, DriverStatus.Good, 0), // right manufacturer but not fav
+        ];
+        var verified = machines.ToDictionary(m => m.Name, _ => VerifyResult.Good);
+        var favorites = new InMemoryTagStore();
+        favorites.Add("a");
+        favorites.Add("b");
+        var db = GameDatabase.Assemble(machines, verified, new InMemoryTagStore(), favorites);
+
+        db.Filter = new GameFilter([], ["Capcom"], favoritesOnly: true);
+        Assert.Equal(["a"], db.RotationPool());
+        Assert.False(db.MatchesFilter("b")); // favourited but wrong manufacturer
+        Assert.False(db.MatchesFilter("c")); // right manufacturer but not favourited
+    }
+
+    [Fact]
+    public void Clearing_FavoritesOnly_restores_the_full_pool()
+    {
+        MachineInfo[] machines =
+        [
+            new("a", "A", "1981", "Capcom", false, false, true, null, DriverStatus.Good, 0),
+            new("b", "B", "1991", "Konami", false, false, true, null, DriverStatus.Good, 0),
+            new("c", "C", "1983", "Sega",   false, false, true, null, DriverStatus.Good, 0),
+        ];
+        var verified = machines.ToDictionary(m => m.Name, _ => VerifyResult.Good);
+        var favorites = new InMemoryTagStore();
+        favorites.Add("a");
+        var db = GameDatabase.Assemble(machines, verified, new InMemoryTagStore(), favorites);
+
+        db.Filter = new GameFilter([], [], favoritesOnly: true);
+        Assert.Equal(["a"], db.RotationPool());
+
+        // The gate is keyed purely off the flag, not off favourites membership — turning it
+        // off restores the whole pool even though "a" is still the only favourite.
+        db.Filter = GameFilter.None;
+        Assert.Equal(["a", "b", "c"], db.RotationPool().OrderBy(x => x));
+        Assert.True(db.MatchesFilter("b"));
+    }
+
+    [Fact]
+    public void FavoritesOnly_with_no_favourites_is_active_but_yields_an_empty_pool()
+    {
+        // The realistic first-use state: "favourites only" enabled before starring anything.
+        // IsActive must stay true (so the app idles on "paused", not "no filter") while the
+        // pool is empty (a recoverable idle the engine waits out).
+        MachineInfo[] machines =
+        [
+            new("a", "A", "1981", "Capcom", false, false, true, null, DriverStatus.Good, 0),
+            new("b", "B", "1991", "Konami", false, false, true, null, DriverStatus.Good, 0),
+        ];
+        var verified = machines.ToDictionary(m => m.Name, _ => VerifyResult.Good);
+        var db = GameDatabase.Assemble(machines, verified, new InMemoryTagStore(), new InMemoryTagStore());
+
+        db.Filter = new GameFilter([], [], favoritesOnly: true);
+        Assert.True(db.Filter.IsActive);
+        Assert.Empty(db.RotationPool());
+        Assert.False(db.MatchesFilter("a"));
+    }
 }

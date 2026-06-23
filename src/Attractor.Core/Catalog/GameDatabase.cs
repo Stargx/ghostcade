@@ -27,10 +27,16 @@ public sealed class GameDatabase
 
     /// <summary>Names eligible for rotation right now (bans and the filter apply live).</summary>
     public IReadOnlyList<string> RotationPool() =>
-        _byName.Values.Where(e => !Banned.Contains(e.Name) && Filter.Matches(e)).Select(e => e.Name).ToArray();
+        _byName.Values.Where(e => !Banned.Contains(e.Name) && Passes(e)).Select(e => e.Name).ToArray();
 
     /// <summary>True if the game passes the active filter (banning is handled separately).</summary>
-    public bool MatchesFilter(string name) => Find(name) is { } e && Filter.Matches(e);
+    public bool MatchesFilter(string name) => Find(name) is { } e && Passes(e);
+
+    /// <summary>The full filter predicate: the decade/manufacturer match from
+    /// <see cref="GameFilter"/> plus, when "favourites only" is on, membership of the
+    /// favourites set (which lives here, not on the entry).</summary>
+    private bool Passes(GameEntry e) =>
+        Filter.Matches(e) && (!Filter.FavoritesOnly || Favorites.Contains(e.Name));
 
     public static GameDatabase Assemble(
         IEnumerable<MachineInfo> machines,
