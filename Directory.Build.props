@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Authors>Cold Beam Games</Authors>
     <Product>Attractor</Product>
     <Description>Ambient arcade player — cycles your MAME collection through attract mode while you work.</Description>

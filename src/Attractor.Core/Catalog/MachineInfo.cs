@@ -18,7 +18,10 @@ public sealed record MachineInfo(
     int Rotate,
     bool IsMechanical = false); // fruit/quiz machines etc; captured for a future filter
 
-/// <summary>A rotation-eligible game: listxml metadata joined with verify results.</summary>
+/// <summary>A rotation-eligible game: listxml metadata joined with verify results.
+/// <paramref name="Genres"/> are the catver.ini category tags (top-level genre first,
+/// then any subgenres), attached after assembly via
+/// <see cref="GameDatabase.ApplyGenres"/>; null = no catver data.</summary>
 public sealed record GameEntry(
     string Name,
     string Title,
@@ -27,7 +30,8 @@ public sealed record GameEntry(
     DriverStatus Driver,
     VerifyResult Verify,
     int Rotate,
-    string? CloneOf = null)
+    string? CloneOf = null,
+    IReadOnlyList<string>? Genres = null)
 {
     public bool IsVertical => Rotate is 90 or 270;
 

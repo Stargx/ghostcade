@@ -30,7 +30,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$MameDir    = 'C:\mame'
+$MameDir    = 'C:\mame'   # edit to your MAME folder (this is the original author's test rig)
 $Mame       = Join-Path $MameDir 'mame.exe'
 $Playlist   = Join-Path $PSScriptRoot 'playlist.txt'
 $TitlesTxt  = Join-Path $PSScriptRoot 'titles.txt'

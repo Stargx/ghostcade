@@ -36,6 +36,11 @@ public sealed class GlueEmbedder : IMameWindowEmbedder
             NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER |
             NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_FRAMECHANGED);
         UpdateBounds(hostRect);
+
+        // The window was launched hidden so MAME's init-time focus grab had no visible
+        // target to steal. Now that it's chromeless, non-activating, owned and positioned,
+        // reveal it without activating — no focus was ever taken from the user's foreground.
+        MameWindowLocator.RevealNoActivate(mameHwnd);
     }
 
     public void UpdateBounds(PixelRect hostRect)

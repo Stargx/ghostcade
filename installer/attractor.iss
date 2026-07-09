@@ -5,7 +5,7 @@
 
 #define AppName "Attractor"
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 #define AppPublisher "Cold Beam Games"
 #define AppExe "Attractor.exe"
@@ -27,7 +27,7 @@ DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#AppExe}
-SetupIconFile=..\src\Attractor.App\assets\img\attractor.ico
+SetupIconFile=..\src\Attractor.App\assets\img\icon.ico
 OutputDir=Output
 OutputBaseFilename=Attractor-{#AppVersion}-Setup
 Compression=lzma2

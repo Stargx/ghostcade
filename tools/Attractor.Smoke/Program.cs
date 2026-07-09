@@ -10,6 +10,7 @@ using Attractor.Core.Catalog;
 using Attractor.Core.Configuration;
 using Attractor.Core.Mame;
 using Attractor.Core.Rotation;
+using Attractor.Core.Windowing;
 
 return args switch
 {
@@ -75,7 +76,12 @@ static async Task<int> RotateAsync(string mame, string[] rest)
             done.TrySetResult();
     };
     engine.WindowReady += w =>
+    {
         Console.WriteLine($"           window 0x{w.Hwnd:X} native {w.NativeClientSize.Width}x{w.NativeClientSize.Height}, chunk {w.ChunkSeconds}s");
+        // Attract chunks launch hidden and are normally revealed by the host's embedder.
+        // Smoke runs un-embedded, so reveal (non-activating) here to keep `rotate` watchable.
+        MameWindowLocator.RevealNoActivate(w.Hwnd);
+    };
     engine.GameFaulted += f =>
         Console.WriteLine($"           FAULT {f.Game}: {f.Kind} -> {f.Verdict}");
 

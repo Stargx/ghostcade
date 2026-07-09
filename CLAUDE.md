@@ -74,7 +74,11 @@ chunk is a **fresh MAME launch of the same game**. This is the ~5-minute "blink"
 the README's FAQ describes, and it ripples through `ChunkPlanner`,
 `RotationEngine` (the chunk loop, including Hold), and `MameLaunchSpec`
 (`-seconds_to_run` / `-frames_to_run`). Do not "optimize" this into a single long
-launch.
+launch. The one deliberate exemption is a **play session**
+(`RotationEngine.PlayCurrent` / `MameLaunchSpec.PlayMode`): a human asked to play,
+so it launches **uncapped, activated (takes focus), mouse enabled, un-embedded**,
+and the rotation restarts the same game when MAME exits. It's also the only
+launch allowed to steal focus.
 
 ## End-to-end pipeline (read this before touching rotation/embedding)
 
@@ -109,7 +113,7 @@ CatalogBuilder ─▶ GameDatabase ─▶ RotationEngine ─▶ MameLauncher ─
 ### Threading model (easy to get wrong)
 
 `RotationEngine` raises **all** events (`GameChanged`/`WindowReady`/
-`StateChanged`/`GameFaulted`/`HoldChanged`) **on the worker thread**.
+`StateChanged`/`GameFaulted`/`HoldChanged`/`PlaySessionChanged`) **on the worker thread**.
 `MainViewModel` marshals every one onto the UI thread with
 `_dispatcher.BeginInvoke`. Public engine methods (and thus hotkeys) are
 thread-safe because they only write to the command `Channel`. Don't touch WPF
@@ -137,6 +141,21 @@ through `Configuration/AtomicFile` (write `.tmp`, then atomic `File.Move` rename
 
 ## Subsystem notes — the non-obvious invariants
 
+**Genre data (catver.ini).** MAME has no genre metadata; the Filter menu's genre
+facet comes from a **user-supplied catver.ini** (`CatverIni` parses the
+`[Category]` section, splitting the `Genre / Subgenre` chain into **every**
+`/`-separated tag — so `Fighter / 2.5D` yields both `Fighter` and `2.5D`, each an
+independently filterable tag). The tags are attached post-assembly via
+`GameDatabase.ApplyGenres` (clones fall back to their parent's tags) and live on
+`GameEntry.Genres` (an `IReadOnlyList<string>`, top-level tag first), so
+`GameFilter.Matches` sees them — a game matches when **any** of its tags is
+selected (`Genres.Overlaps`), unlike favourites, which are gated in `GameDatabase`.
+Because flattening subgenres balloons the tag count (catver has 500+), the menu
+shows the top `CommonGenreCount` by game-count inline and puts the rest behind the
+same searchable `FacetPickerWindow` "More…" picker the manufacturer list uses. No
+catver.ini = null genres = the menu shows a disabled explainer, and games without
+genre data are excluded only while a genre constraint is active.
+
 **Catalog caching.** Caches are invalidated by **`mame.exe` identity only**
 (`MameFingerprint` = path + length + mtime), **not** by ROM content. Adding/removing
 ROMs without changing the exe will *not* refresh the verify cache — use File →
@@ -150,8 +169,9 @@ hand-editable); only the **first whitespace-delimited token** is read back, so
 **MAME launch & version dialects.** "Attract mode, no coins, no focus" is **not**
 MAME flags — there is no coin/attract option. It falls out of (a) never inserting a
 coin, (b) the <300s session bound keeping MAME in its built-in demo loop with
-warnings suppressed, and (c) `SW_SHOWNOACTIVATE` so the window appears without
-grabbing focus. All version differences are isolated in `MameCapabilities` /
+warnings suppressed, and (c) attract chunks are launched **hidden** (`SW_HIDE`) and
+revealed non-activating (`SW_SHOWNA`) only after the embedder styles them, so MAME
+can't steal focus (see the focus-theft note below). All version differences are isolated in `MameCapabilities` /
 `MameTimingMode`: **≥0.147 uses `-seconds_to_run`; <0.147 uses `-frames_to_run`
 (seconds×refresh) plus `-skip_disclaimer`** — modern MAME treats `-skip_disclaimer`
 as a *fatal* unknown option, so it is emitted *only* in frames mode. An
@@ -159,12 +179,30 @@ unparseable `-help` banner defaults to the modern dialect (fail-open). The rest 
 the app never branches on version.
 
 **Why raw `CreateProcessW` (not `Process.Start`).** `ProcessStartInfo` cannot set
-the startup show-command (`SW_SHOWNOACTIVATE`, needed to avoid stealing focus on
-every rotation) and cannot start `CREATE_SUSPENDED` (needed so the child joins the
-kill-on-close `JobObject` *before executing one instruction* — no orphan window).
-Order is a hard invariant: **assign-to-job while suspended, then `ResumeThread`.**
-`CREATE_NO_WINDOW` is added so console-subsystem MAME builds (0.147) don't pop a
-console.
+the startup show-command (`SW_HIDE` for attract chunks — see the focus note below —
+or `SW_SHOWNORMAL` for a play session) and cannot start `CREATE_SUSPENDED` (needed
+so the child joins the kill-on-close `JobObject` *before executing one instruction* —
+no orphan window). Order is a hard invariant: **assign-to-job while suspended, then
+`ResumeThread`.** `CREATE_NO_WINDOW` is added so console-subsystem MAME builds (0.147)
+don't pop a console.
+
+**Focus theft — why launch-hidden, not `SW_SHOWNOACTIVATE`.** `SW_SHOWNOACTIVATE`
+only governs MAME's *first* `ShowWindow`; it does **not** stop MAME's OSD from calling
+`SetForegroundWindow` on its own window during video init, which steals keyboard focus
+on rigs where the foreground lock is off (`ForegroundLockTimeout == 0`, common on
+arcade/emulation boxes). `WS_EX_NOACTIVATE` can't veto that programmatic grab either,
+and is applied too late anyway (after locate + settle + the WindowReady marshal). So
+attract chunks are launched **hidden** (`MameLauncher` → `SW_HIDE`): a window that was
+never visible can't be foregrounded, so the grab no-ops regardless of the lock. The
+locator (`MameWindowLocator`) therefore does **not** gate on `IsWindowVisible` (it
+matches pid + class `"MAME"` + a non-zero client rect); the embedder strips chrome,
+sets `WS_EX_NOACTIVATE` and the owner **while still hidden**, then reveals with
+`SW_SHOWNA` (`MameWindowLocator.RevealNoActivate`) as its last act. `ForegroundGuard`
+(a global `EVENT_SYSTEM_FOREGROUND` hook, armed on the UI thread, disarmed around Play)
+is the belt-and-suspenders backstop: if a *revealed* MAME window ever re-grabs the
+foreground (e.g. after a slow network ROM finishes loading), it bounces focus straight
+back to the user's window. A **play session keeps `SW_SHOWNORMAL`** and is shown
+activated — it's the one launch allowed to take focus, so the guard is disarmed for it.
 
 **Window embedding — Glue (default) vs Reparent (dormant).** `GlueEmbedder`
 **never calls `SetParent`**: it strips the chrome, sets

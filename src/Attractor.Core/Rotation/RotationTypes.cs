@@ -4,9 +4,9 @@ namespace Attractor.Core.Rotation;
 
 public enum RotationState { Stopped, Running, Faulted, Empty }
 
-public enum EngineCommand { Skip, Previous, ToggleHold, Ban, Stop, Reevaluate, Rebag }
+public enum EngineCommand { Skip, Previous, ToggleHold, Ban, Stop, Reevaluate, Rebag, PlayCurrent }
 
-public enum GameFaultKind { CrashedAtLaunch, NoWindow, Hung }
+public enum GameFaultKind { CrashedAtLaunch, NoWindow, Hung, LaunchFailed }
 
 /// <summary>Why the rotation moved to a new game. <see cref="Started"/> is the first
 /// game of a session; <see cref="Auto"/> is the dwell elapsing on its own; <see
@@ -31,6 +31,12 @@ public sealed record GameChange(string Game, GameChangeReason Reason);
 
 /// <summary>A fresh MAME window for the current chunk, ready to be embedded by the host UI.</summary>
 public sealed record MameWindowReady(string Game, int Pid, IntPtr Hwnd, PixelSize NativeClientSize, int ChunkSeconds);
+
+/// <summary>A hands-on play session started (<paramref name="Active"/> true) or ended
+/// (false). Play windows are NOT embedded — no <see cref="MameWindowReady"/> fires for
+/// them; the host just parks its UI (and can point per-app audio at <paramref name="Pid"/>)
+/// until the session ends and the attract rotation restarts the game.</summary>
+public sealed record PlaySession(string Game, bool Active, int Pid);
 
 public sealed record GameFault(string Game, GameFaultKind Kind, FaultVerdict Verdict, int? ExitCode);
 

@@ -65,15 +65,20 @@ public sealed class AppPaths
         }
     }
 
-    /// <summary>Copy settings/caches from a previous %APPDATA% install, once.</summary>
+    /// <summary>Copy settings/caches from a previous %APPDATA% install. Retries on every
+    /// launch until a run completes with nothing skipped (a locked favorites.txt on the
+    /// first attempt must not be dropped forever), then stamps a marker and stops. The
+    /// per-file "destination missing" gate keeps retries from clobbering newer data.</summary>
     private static void MigrateLegacyData(string portable)
     {
         var legacy = LegacyRoot;
         if (string.Equals(Path.GetFullPath(legacy), Path.GetFullPath(portable), StringComparison.OrdinalIgnoreCase))
             return;
-        if (!Directory.Exists(legacy) || File.Exists(Path.Combine(portable, "config.json")))
-            return; // nothing to migrate, or portable data already present
+        var marker = Path.Combine(portable, ".migration-done");
+        if (!Directory.Exists(legacy) || File.Exists(marker))
+            return; // nothing to migrate, or a past migration finished cleanly
 
+        bool complete = true;
         foreach (var name in DataFileNames)
         {
             var src = Path.Combine(legacy, name);
@@ -83,8 +88,15 @@ public sealed class AppPaths
                 if (File.Exists(src) && !File.Exists(dst))
                     File.Copy(src, dst);
             }
-            catch (IOException) { /* skip a locked file; not fatal */ }
-            catch (UnauthorizedAccessException) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                complete = false; // skip a locked file; retry next launch
+            }
+        }
+        if (complete)
+        {
+            try { File.WriteAllText(marker, ""); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
     }
 }

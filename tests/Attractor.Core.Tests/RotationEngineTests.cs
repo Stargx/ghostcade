@@ -18,10 +18,12 @@ public class RotationEngineTests
     private sealed class Harness : IAsyncDisposable
     {
         public FakeLauncher Launcher { get; } = new();
+        public FakeWindowFinder Finder { get; } = new();
         public InMemoryTagStore Banned { get; } = new();
         public RotationEngine Engine { get; }
         public List<string> GamesSeen { get; } = [];
         public List<GameFault> Faults { get; } = [];
+        public List<PlaySession> PlaySessions { get; } = [];
         public List<IReadOnlyList<string>> BagSnapshots { get; } = [];
         // The live pool; mutate under its own lock (the engine reads it on the loop thread).
         public List<string> Pool { get; }
@@ -33,11 +35,12 @@ public class RotationEngineTests
             Pool = [.. pool];
             Engine = new RotationEngine(
                 Launcher, PoolSnapshot, Banned, @"c:\fake\mame.exe",
-                options ?? FastOptions, new FakeWindowFinder(), random: new Random(42),
+                options ?? FastOptions, Finder, random: new Random(42),
                 onBagChanged: s => { lock (BagSnapshots) BagSnapshots.Add(s); },
                 filteredOut: filteredOut);
             Engine.GameChanged += c => { lock (GamesSeen) GamesSeen.Add(c.Game); };
             Engine.GameFaulted += f => { lock (Faults) Faults.Add(f); };
+            Engine.PlaySessionChanged += p => { lock (PlaySessions) PlaySessions.Add(p); };
         }
 
         // Like the real GameDatabase.RotationPool(), hand back a fresh copy so a test can
@@ -240,5 +243,162 @@ public class RotationEngineTests
         Assert.Equal(RotationState.Stopped, h.Engine.State);
         lock (h.Launcher.Launches)
             Assert.True(h.Launcher.Launches[^1].Proc.HasExited);
+    }
+
+    [Fact]
+    public async Task Hung_game_is_killed_by_the_watchdog_and_faulted()
+    {
+        // Watchdog = chunk*0 + 1s of wall clock; the game runs forever (SMB stall,
+        // slow-clock driver). It must be killed and recorded as Hung, not waited out.
+        await using var h = new Harness(["only"],
+            FastOptions with { WatchdogBaseSeconds = 1 });
+        h.Launcher.OnLaunch = (_, _) => { }; // never exits on its own
+        h.Start();
+        await Wait.ForAsync(() => { lock (h.Faults) return h.Faults.Count >= 1; }, 15000, "watchdog fault");
+        lock (h.Faults)
+            Assert.Equal(GameFaultKind.Hung, h.Faults[0].Kind);
+        Assert.True(h.Launcher.Launches[0].Proc.HasExited, "watchdog must kill the hung game");
+    }
+
+    [Fact]
+    public async Task Windowless_game_is_killed_and_faulted_as_NoWindow()
+    {
+        await using var h = new Harness(["only"]);
+        h.Finder.FindWindows = false;        // MAME runs but never opens a window
+        h.Launcher.OnLaunch = (_, _) => { }; // alive until killed
+        h.Start();
+        await Wait.ForAsync(() => { lock (h.Faults) return h.Faults.Count >= 1; }, 15000, "NoWindow fault");
+        lock (h.Faults)
+            Assert.Equal(GameFaultKind.NoWindow, h.Faults[0].Kind);
+        Assert.True(h.Launcher.Launches[0].Proc.HasExited, "a windowless game must not be left running");
+    }
+
+    [Fact]
+    public async Task Nonzero_exit_after_the_crash_window_counts_as_a_completed_chunk()
+    {
+        // Real MAME exits nonzero for some games' natural chunk end paths; only a FAST
+        // nonzero exit is a crash. With the window at 0 every exit is "after" it.
+        await using var h = new Harness(["a", "b"], FastOptions with { CrashWindowSeconds = 0 });
+        h.Launcher.OnLaunch = (_, proc) => Task.Delay(30).ContinueWith(_ => proc.Exit(-5));
+        h.Start();
+        await h.SeenAtLeast(2); // advances normally
+        lock (h.Faults)
+            Assert.Empty(h.Faults);
+    }
+
+    [Fact]
+    public async Task Launcher_throw_faults_the_game_and_escalates_to_engine_fault()
+    {
+        // CreateProcessW failing (moved exe, dead share) must escalate through
+        // FaultPolicy to the Faulted state — never silently end the loop as Stopped.
+        await using var h = new Harness(["a", "b", "c", "d", "e", "f"]);
+        h.Launcher.OnLaunch = (_, _) => throw new System.ComponentModel.Win32Exception(53 /* BAD_NETPATH */);
+        h.Start();
+        await Wait.ForAsync(() => h.Engine.State == RotationState.Faulted, 15000, "engine faulted");
+        lock (h.Faults)
+        {
+            Assert.All(h.Faults, f => Assert.Equal(GameFaultKind.LaunchFailed, f.Kind));
+            Assert.Contains(h.Faults, f => f.Verdict == FaultVerdict.EngineFaulted);
+        }
+    }
+
+    [Fact]
+    public async Task Ban_while_idle_lands_on_the_game_it_was_aimed_at()
+    {
+        // A ban is aimed at what the user is looking at; even landing after the pool
+        // emptied (or between games) it must ban THAT game, not whatever comes next.
+        await using var h = new Harness(["a"]);
+        h.Launcher.OnLaunch = (_, _) => { };
+        h.Start();
+        await h.SeenAtLeast(1);
+        lock (h.Pool) h.Pool.Clear();
+        h.Engine.Skip(); // draw against the now-empty pool -> idle
+        await Wait.ForAsync(() => h.Engine.State == RotationState.Empty, 15000, "idle on empty pool");
+
+        h.Engine.Ban(); // aimed at "a", the last game shown
+        await Wait.ForAsync(() => h.Banned.Contains("a"), 15000, "ban landed while idle");
+    }
+
+    [Fact]
+    public async Task Play_launches_an_uncapped_play_session_then_restarts_the_same_game()
+    {
+        await using var h = new Harness(["a", "b"]);
+        h.Launcher.OnLaunch = (spec, proc) =>
+        {
+            if (spec.PlayMode)
+                Task.Delay(80).ContinueWith(_ => proc.Exit(0)); // the user plays, then quits
+            // attract chunks run until killed
+        };
+        h.Start();
+        await h.SeenAtLeast(1);
+        string playing = h.Engine.CurrentGame!;
+
+        h.Engine.PlayCurrent();
+        await Wait.ForAsync(
+            () => { lock (h.PlaySessions) return h.PlaySessions.Count >= 2; }, 15000, "play session start+end");
+        lock (h.PlaySessions)
+        {
+            Assert.Equal([true, false], h.PlaySessions.Take(2).Select(p => p.Active));
+            Assert.All(h.PlaySessions, p => Assert.Equal(playing, p.Game));
+        }
+
+        Assert.True(h.Launcher.Launches[0].Proc.HasExited, "play must kill the attract chunk");
+        var play = h.Launcher.Launches[1];
+        Assert.True(play.Spec.PlayMode, "play session launches in play mode");
+        Assert.Equal(0, play.Spec.SecondsToRun); // no 300s cap — a human is at the controls
+
+        // the rotation resumes with the same game, in attract (non-play) mode
+        await h.SeenAtLeast(2);
+        lock (h.GamesSeen)
+            Assert.Equal(playing, h.GamesSeen[1]);
+        await Wait.ForAsync(() => { lock (h.Launcher.Launches) return h.Launcher.Launches.Count >= 3; },
+            15000, "attract relaunch after play");
+        lock (h.Launcher.Launches)
+        {
+            Assert.Equal(playing, h.Launcher.Launches[2].Spec.GameName);
+            Assert.False(h.Launcher.Launches[2].Spec.PlayMode);
+        }
+    }
+
+    [Fact]
+    public async Task Stop_during_a_play_session_kills_it_and_ends_the_loop()
+    {
+        await using var h = new Harness(["a"]);
+        h.Launcher.OnLaunch = (_, _) => { }; // both attract and play run until killed
+        h.Start();
+        await h.SeenAtLeast(1);
+        h.Engine.PlayCurrent();
+        await Wait.ForAsync(
+            () => { lock (h.PlaySessions) return h.PlaySessions.Count >= 1; }, 15000, "play session active");
+
+        await h.Engine.StopAsync();
+
+        Assert.Equal(RotationState.Stopped, h.Engine.State);
+        lock (h.Launcher.Launches)
+            Assert.True(h.Launcher.Launches[^1].Proc.HasExited, "stop must kill the play session");
+        lock (h.PlaySessions)
+            Assert.False(h.PlaySessions[^1].Active); // the end event still fired
+    }
+
+    [Fact]
+    public async Task Skip_during_a_play_session_is_swallowed()
+    {
+        // Rotation commands make no sense while the user holds the controls; a stray
+        // global hotkey must not yank the game away mid-credit.
+        await using var h = new Harness(["a", "b"]);
+        h.Launcher.OnLaunch = (_, _) => { };
+        h.Start();
+        await h.SeenAtLeast(1);
+        h.Engine.PlayCurrent();
+        await Wait.ForAsync(
+            () => { lock (h.PlaySessions) return h.PlaySessions.Count >= 1; }, 15000, "play session active");
+
+        h.Engine.Skip();
+        await Task.Delay(300); // give a (wrongly honored) skip time to kill the session
+
+        lock (h.PlaySessions)
+            Assert.Single(h.PlaySessions); // still active — no end event
+        lock (h.Launcher.Launches)
+            Assert.False(h.Launcher.Launches[^1].Proc.HasExited, "play session must survive a Skip");
     }
 }

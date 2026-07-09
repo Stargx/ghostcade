@@ -38,6 +38,13 @@ public sealed record AppConfig
         public string TimingMode { get; init; } = "auto";
         /// <summary>Detected MAME minor version (e.g. 220), for diagnostics; null if unknown.</summary>
         public int? DetectedVersionMinor { get; init; } = null;
+        /// <summary>
+        /// Path to a catver.ini for the genre filter (the fan-maintained category
+        /// file — Attractor doesn't ship it). Relative paths resolve against the
+        /// MAME directory. Null/empty = look next to mame.exe, then in its
+        /// "folders" subfolder; genre filtering simply stays hidden without one.
+        /// </summary>
+        public string? CatverPath { get; init; } = null;
     }
 
     public sealed record ArtSection
@@ -61,6 +68,7 @@ public sealed record AppConfig
         public string Hold { get; init; } = "Ctrl+Alt+Down";
         public string Ban { get; init; } = "Ctrl+Alt+B";
         public string Favorite { get; init; } = "Ctrl+Alt+F";
+        public string Play { get; init; } = "Ctrl+Alt+P";
         public string Mute { get; init; } = "Ctrl+Alt+M";
         public string VolumeUp { get; init; } = "Ctrl+Alt+OemPlus";
         public string VolumeDown { get; init; } = "Ctrl+Alt+OemMinus";
@@ -97,6 +105,9 @@ public sealed record AppConfig
         public List<int> Decades { get; init; } = [];
         /// <summary>Manufacturer names to include (exact, as MAME reports them); empty = all.</summary>
         public List<string> Manufacturers { get; init; } = [];
+        /// <summary>Genres to include (catver.ini top-level categories); empty = all.
+        /// Needs a catver.ini (see mame.catverPath) to have any effect.</summary>
+        public List<string> Genres { get; init; } = [];
         /// <summary>Restrict the rotation to favourited games (favorites.txt), combined
         /// (AND) with any decade/manufacturer selection; false = no favourites constraint.</summary>
         public bool FavoritesOnly { get; init; } = false;

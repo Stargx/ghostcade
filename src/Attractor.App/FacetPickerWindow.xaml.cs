@@ -5,11 +5,11 @@ using System.Windows.Data;
 namespace Attractor.App;
 
 /// <summary>
-/// The "More…" manufacturer picker: a searchable, checkable list of every
-/// manufacturer in the catalog. Returns the chosen names via
-/// <see cref="SelectedManufacturers"/> when applied.
+/// A "More…" facet picker: a searchable, checkable list of every value in the
+/// catalog for one filter facet (manufacturers, genres, …). Returns the chosen
+/// names via <see cref="SelectedNames"/> when applied.
 /// </summary>
-public partial class ManufacturerFilterWindow : Window
+public partial class FacetPickerWindow : Window
 {
     private sealed class Row
     {
@@ -22,21 +22,26 @@ public partial class ManufacturerFilterWindow : Window
     private readonly List<Row> _rows;
     private readonly ICollectionView _view;
 
-    public ManufacturerFilterWindow(IReadOnlyList<ManufacturerCount> manufacturers, IReadOnlySet<string> selected)
+    public FacetPickerWindow(
+        string title, string heading, string hint,
+        IEnumerable<(string Name, int Count)> items, IReadOnlySet<string> selected)
     {
         InitializeComponent();
         SourceInitialized += (_, _) => Dwm.ApplyDarkTitleBar(this);
+        Title = title;
+        Heading.Text = heading;
+        Hint.Text = hint;
 
-        _rows = manufacturers
-            .OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(m => new Row { Name = m.Name, Count = m.Count, IsSelected = selected.Contains(m.Name) })
+        _rows = items
+            .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(i => new Row { Name = i.Name, Count = i.Count, IsSelected = selected.Contains(i.Name) })
             .ToList();
         _view = CollectionViewSource.GetDefaultView(_rows);
         List.ItemsSource = _view;
     }
 
-    /// <summary>The manufacturers ticked when APPLY was pressed.</summary>
-    public IReadOnlyList<string> SelectedManufacturers { get; private set; } = [];
+    /// <summary>The names ticked when APPLY was pressed.</summary>
+    public IReadOnlyList<string> SelectedNames { get; private set; } = [];
 
     private void SearchBox_TextChanged(object sender, RoutedEventArgs e)
     {
@@ -55,7 +60,7 @@ public partial class ManufacturerFilterWindow : Window
 
     private void Apply_Click(object sender, RoutedEventArgs e)
     {
-        SelectedManufacturers = _rows.Where(r => r.IsSelected).Select(r => r.Name).ToArray();
+        SelectedNames = _rows.Where(r => r.IsSelected).Select(r => r.Name).ToArray();
         DialogResult = true;
     }
 

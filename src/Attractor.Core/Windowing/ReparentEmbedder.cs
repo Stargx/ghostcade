@@ -24,6 +24,10 @@ public sealed class ReparentEmbedder : IMameWindowEmbedder
 
         NativeMethods.SetParent(mameHwnd, ownerHwnd);
         UpdateBounds(hostRect);
+
+        // Launched hidden (so MAME's init focus grab had no visible target); reveal the
+        // now-parented, positioned child without activating it.
+        MameWindowLocator.RevealNoActivate(mameHwnd);
     }
 
     public void UpdateBounds(PixelRect hostRect)

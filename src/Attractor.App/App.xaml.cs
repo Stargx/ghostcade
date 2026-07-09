@@ -54,7 +54,10 @@ public partial class App : Application
         {
             config = ConfigStore.Load(paths.ConfigFile);
         }
-        catch (InvalidDataException ex)
+        // IOException too (config.json held by a sync/AV tool, share flake): letting it
+        // reach DispatcherUnhandledException would mark it handled with no window ever
+        // created — an invisible process squatting on the single-instance mutex.
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
         {
             Log.Error("config load failed", ex);
             MessageBox.Show(ex.Message, "Attractor — config problem",

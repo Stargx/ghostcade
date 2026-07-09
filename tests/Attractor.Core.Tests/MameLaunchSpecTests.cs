@@ -54,6 +54,27 @@ public class MameLaunchSpecTests
         Assert.Contains("-skip_gameinfo", args);
     }
 
+    [Fact]
+    public void Attract_chunks_disable_the_mouse()
+    {
+        var args = new MameLaunchSpec(@"c:\mame.exe", "pacman", 299).BuildArgumentList();
+        Assert.Contains("-nomouse", args);
+    }
+
+    [Fact]
+    public void Play_mode_is_uncapped_and_keeps_the_mouse()
+    {
+        // A human is at the controls: no -seconds_to_run cap (the <300s rule guards
+        // unattended runs), and the mouse stays usable for trackball/spinner games.
+        var args = new MameLaunchSpec(@"c:\mame.exe", "pacman", 0, PlayMode: true).BuildArgumentList();
+
+        Assert.DoesNotContain("-seconds_to_run", args);
+        Assert.DoesNotContain("-frames_to_run", args);
+        Assert.DoesNotContain("-nomouse", args);
+        Assert.Contains("-skip_gameinfo", args); // still skipped — nothing blocks the start
+        Assert.Contains("-window", args);
+    }
+
     private static string ArgAfter(IReadOnlyList<string> args, string flag)
     {
         for (int i = 0; i + 1 < args.Count; i++)

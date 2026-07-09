@@ -5,7 +5,7 @@ namespace Attractor.Core.Tests;
 public class MameCapabilitiesTests
 {
     [Theory]
-    [InlineData("M.A.M.E. v0.78 (Dec 24 2003)", 78, MameTimingMode.FramesToRun, true)]
+    [InlineData("M.A.M.E. v0.78 (Dec 24 2003)", 78, MameTimingMode.FramesToRun, false)]  // parses, but pre-0.147 = unsupported
     [InlineData("MAME v0.147 (mame0147)", 147, MameTimingMode.SecondsToRun, true)]
     [InlineData("MAME 0.220 (mame0220)", 220, MameTimingMode.SecondsToRun, true)]
     [InlineData("M.A.M.E. v0.62 (older build)", 62, MameTimingMode.FramesToRun, false)]
@@ -30,11 +30,16 @@ public class MameCapabilitiesTests
     }
 
     [Fact]
-    public void The_seconds_floor_is_the_boundary()
+    public void The_0_147_floor_is_the_boundary_for_dialect_and_support()
     {
-        // one below the floor still needs frames; the floor itself uses seconds
-        Assert.Equal(MameTimingMode.FramesToRun, MameCapabilities.Parse("MAME 0.146").TimingMode);
-        Assert.Equal(MameTimingMode.SecondsToRun, MameCapabilities.Parse("MAME 0.147").TimingMode);
+        // 0.147 is both the seconds-dialect floor and the support floor: one below
+        // still parses (as frames) but is unsupported; the floor itself uses seconds and is supported.
+        var below = MameCapabilities.Parse("MAME 0.146");
+        Assert.Equal(MameTimingMode.FramesToRun, below.TimingMode);
+        Assert.False(below.Supported);
+        var floor = MameCapabilities.Parse("MAME 0.147");
+        Assert.Equal(MameTimingMode.SecondsToRun, floor.TimingMode);
+        Assert.True(floor.Supported);
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using Attractor.Core.Configuration;
+using Attractor.Core.Diagnostics;
 
 namespace Attractor.App;
 
@@ -18,6 +19,9 @@ public static class WindowPlacement
                 return;
             var p = JsonSerializer.Deserialize<PlacementData>(File.ReadAllText(path));
             if (p is null)
+                return;
+            // hand-edited/corrupt sizes: Rect throws on negatives, and !(x > 0) also rejects NaN
+            if (!(p.Width > 0) || !(p.Height > 0))
                 return;
 
             // only apply if the saved rect still intersects the virtual desktop
@@ -36,12 +40,17 @@ public static class WindowPlacement
             if (p.IsMaximized)
                 window.WindowState = WindowState.Maximized;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            // corrupt placement file: fall back to defaults
+            // Corrupt or unreadable placement file: fall back to defaults. Letting an
+            // IOException out would abort the MainWindow ctor and leave a windowless
+            // process holding the single-instance mutex.
         }
     }
 
+    /// <summary>Best-effort, like every other persisted-state write (the data folder may
+    /// be a locked/offline network share). This runs inside OnClosing after the close has
+    /// been deferred — a throw here would leave the window permanently unclosable.</summary>
     public static void Save(Window window, string path)
     {
         var bounds = window.WindowState == WindowState.Normal
@@ -50,6 +59,10 @@ public static class WindowPlacement
         var data = new PlacementData(
             bounds.Left, bounds.Top, bounds.Width, bounds.Height,
             window.WindowState == WindowState.Maximized);
-        AtomicFile.WriteAllText(path, JsonSerializer.Serialize(data));
+        try { AtomicFile.WriteAllText(path, JsonSerializer.Serialize(data)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            App.Log.Warn("couldn't save window placement", ex);
+        }
     }
 }

@@ -22,6 +22,9 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Dispatcher _dispatcher;
     private readonly MameLauncher _launcher = new();
     private readonly IMameWindowEmbedder _embedder;
+    // Backstop to launch-hidden: bounces focus back to the user's window if a revealed MAME
+    // window ever re-grabs the foreground mid-chunk (e.g. after a slow ROM load finishes).
+    private readonly ForegroundGuard _foregroundGuard = new();
     private readonly SoundEffects _sfx;
     private readonly CancellationTokenSource _cts = new();
     private readonly DispatcherTimer _countdownTimer;
@@ -63,9 +66,11 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _queueText = "";
     [ObservableProperty] private string _statusMessage = "";
     [ObservableProperty] private string _stageMessage = "LOADING CATALOG…";
+    [ObservableProperty] private string _aboutHeader = "ABOUT";
     [ObservableProperty] private string _aboutText = "";
     [ObservableProperty] private string _holdLabel = "HOLD";
     [ObservableProperty] private string _muteLabel = "SOUND ON";
+    [ObservableProperty] private string _playButtonLabel = "PLAY THIS GAME";
     [ObservableProperty] private string _holdGlyph = "";       // pause
     [ObservableProperty] private string _muteGlyph = "";       // speaker
     [ObservableProperty] private string _favoriteGlyph = "";   // star outline
@@ -73,13 +78,21 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private ImageSource? _maskImage;
     [ObservableProperty] private bool _isMuted;
     [ObservableProperty] private bool _isHeld;
+    [ObservableProperty] private bool _isPlaying;
     [ObservableProperty] private double _gameVolume = 1.0;
     [ObservableProperty] private string _volumeReadout = "";
 
     // One hotkey press = ±10% of MAME's per-app volume (hotkeys don't auto-repeat).
     private const double VolumeStep = 0.1;
 
-    private Dictionary<string, string> _history = new(StringComparer.Ordinal);
+    private Dictionary<string, IReadOnlyList<AboutSection>> _history = new(StringComparer.Ordinal);
+
+    // The ABOUT side panel cycles through a game's history sections (history,
+    // trivia, scoring, …) rather than showing one static blob.
+    private IReadOnlyList<AboutSection> _aboutSections = [];
+    private int _aboutIndex;
+    private readonly DispatcherTimer _aboutTimer;
+    private const double AboutSectionSeconds = 15;
 
     public MainViewModel(AppConfig config, AppPaths paths, ILog? log = null)
     {
@@ -97,6 +110,8 @@ public sealed partial class MainViewModel : ObservableObject
             (_, _) => UpdateCountdown(), _dispatcher);
         _volumePersistTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(600) };
         _volumePersistTimer.Tick += (_, _) => FlushVolumePersist();
+        _aboutTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(AboutSectionSeconds) };
+        _aboutTimer.Tick += (_, _) => AdvanceAboutSection();
     }
 
     // ---- lifecycle --------------------------------------------------------------
@@ -105,6 +120,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _ownerHwnd = ownerHwnd;
         _hostRect = hostRect;
+        // Install the focus backstop on the UI thread (it needs this thread's message pump)
+        // and arm it for the rotation. Play sessions disarm it (see OnPlaySession).
+        _foregroundGuard.Install(ownerHwnd);
+        _foregroundGuard.Arm();
         _sfx.PlayIntro(); // startup jingle, while the catalog loads
         return BuildAndStartAsync(forceRescan);
     }
@@ -122,21 +141,25 @@ public sealed partial class MainViewModel : ObservableObject
             if (_engine is not null)
             {
                 StageMessage = "STOPPING…";
-                await _engine.StopAsync();
+                // Don't let a fault stored in the old loop task wedge every future
+                // rescan — the old engine is being discarded either way.
+                try { await _engine.StopAsync(); }
+                catch (Exception ex) { _log.Error("stopping previous engine failed", ex); }
                 _engine = null;
             }
 
             var mameExe = _config.Mame.ExePath;
 
             // Resolve which MAME launch dialect to use. Setup persists a concrete
-            // "seconds"/"frames"; "auto" (e.g. an old config) probes the exe once
-            // here and gates unsupported builds before any scan/rotation work.
+            // "seconds" for supported builds; anything else — "auto" from an old
+            // config, or a "frames" persisted back when pre-0.147 was supported —
+            // probes the exe here so the 0.147 support gate can't be bypassed by
+            // stale config (the frames path is the one that regressed; see
+            // MameCapabilities.MinSupportedMinor).
             MameTimingMode timingMode;
             int refreshHz = 60;
             var configuredMode = _config.Mame.TimingMode?.Trim().ToLowerInvariant();
-            if (configuredMode == "frames")
-                timingMode = MameTimingMode.FramesToRun;
-            else if (configuredMode == "seconds")
+            if (configuredMode == "seconds")
                 timingMode = MameTimingMode.SecondsToRun;
             else
             {
@@ -151,7 +174,7 @@ public sealed partial class MainViewModel : ObservableObject
                 if (!caps.Supported)
                 {
                     _log.Error($"unsupported MAME version {caps.VersionLabel}");
-                    StageMessage = $"MAME {caps.VersionLabel} isn't supported — Attractor needs 0.78 or newer.";
+                    StageMessage = $"MAME {caps.VersionLabel} isn't supported — Attractor needs 0.147 or newer.";
                     return;
                 }
                 timingMode = caps.TimingMode;
@@ -171,6 +194,7 @@ public sealed partial class MainViewModel : ObservableObject
                             StageMessage = $"SCANNING: {p.Stage} {p.Count}…")),
                         forceRescan, _cts.Token);
                     await EnrichFavoritesAsync(db, favorites, mameExe);
+                    await ApplyGenresAsync(db, mameExe);
                     return db;
                 });
             }
@@ -227,8 +251,10 @@ public sealed partial class MainViewModel : ObservableObject
             engine.GameFaulted += f => _dispatcher.BeginInvoke(() => OnGameFaulted(f));
             engine.HoldChanged += held => _dispatcher.BeginInvoke(() => OnHoldChanged(held));
             engine.StateChanged += s => _dispatcher.BeginInvoke(() => OnStateChanged(s));
+            engine.PlaySessionChanged += p => _dispatcher.BeginInvoke(() => OnPlaySession(p));
 
             _engine = engine;
+            PlayThisCommand.NotifyCanExecuteChanged(); // the engine exists now
             _gamesShown = 0;
             StageMessage = "STARTING ROTATION…";
             _countdownTimer.Start();
@@ -259,6 +285,10 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Manufacturers present, most games first (for the menu's common list + the picker).</summary>
     public IReadOnlyList<ManufacturerCount> AvailableManufacturers { get; private set; } = [];
 
+    /// <summary>Genres present (from catver.ini), most games first. Empty when no
+    /// catver.ini was found — the Filter menu then explains instead of offering genres.</summary>
+    public IReadOnlyList<GenreCount> AvailableGenres { get; private set; } = [];
+
     /// <summary>The filter currently applied to the rotation.</summary>
     public GameFilter ActiveFilter => _db?.Filter ?? GameFilter.None;
 
@@ -274,7 +304,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (_db is null) return;
         var decades = new HashSet<int>(_db.Filter.Decades);
         if (!decades.Add(decade)) decades.Remove(decade);
-        ApplyFilter(new GameFilter(decades, _db.Filter.Manufacturers, _db.Filter.FavoritesOnly));
+        ApplyFilter(new GameFilter(decades, _db.Filter.Manufacturers, _db.Filter.Genres, _db.Filter.FavoritesOnly));
     }
 
     public void ToggleManufacturer(string manufacturer)
@@ -282,22 +312,37 @@ public sealed partial class MainViewModel : ObservableObject
         if (_db is null) return;
         var mans = new HashSet<string>(_db.Filter.Manufacturers, StringComparer.OrdinalIgnoreCase);
         if (!mans.Add(manufacturer)) mans.Remove(manufacturer);
-        ApplyFilter(new GameFilter(_db.Filter.Decades, mans, _db.Filter.FavoritesOnly));
+        ApplyFilter(new GameFilter(_db.Filter.Decades, mans, _db.Filter.Genres, _db.Filter.FavoritesOnly));
     }
 
     /// <summary>Replace the manufacturer selection wholesale (from the picker dialog).</summary>
     public void SetManufacturers(IEnumerable<string> manufacturers)
     {
         if (_db is null) return;
-        ApplyFilter(new GameFilter(_db.Filter.Decades, manufacturers, _db.Filter.FavoritesOnly));
+        ApplyFilter(new GameFilter(_db.Filter.Decades, manufacturers, _db.Filter.Genres, _db.Filter.FavoritesOnly));
     }
 
-    /// <summary>Toggle the "favourites only" constraint, preserving any decade/manufacturer
-    /// selection it combines with.</summary>
+    public void ToggleGenre(string genre)
+    {
+        if (_db is null) return;
+        var genres = new HashSet<string>(_db.Filter.Genres, StringComparer.OrdinalIgnoreCase);
+        if (!genres.Add(genre)) genres.Remove(genre);
+        ApplyFilter(new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers, genres, _db.Filter.FavoritesOnly));
+    }
+
+    /// <summary>Replace the genre selection wholesale (from the picker dialog).</summary>
+    public void SetGenres(IEnumerable<string> genres)
+    {
+        if (_db is null) return;
+        ApplyFilter(new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers, genres, _db.Filter.FavoritesOnly));
+    }
+
+    /// <summary>Toggle the "favourites only" constraint, preserving any
+    /// decade/manufacturer/genre selection it combines with.</summary>
     public void ToggleFavoritesOnly()
     {
         if (_db is null) return;
-        ApplyFilter(new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers, !_db.Filter.FavoritesOnly));
+        ApplyFilter(new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers, _db.Filter.Genres, !_db.Filter.FavoritesOnly));
     }
 
     public void ClearFilters()
@@ -358,22 +403,42 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_db is null) return;
         _db.Filter = new GameFilter(
-            _config.Filter.Decades, _config.Filter.Manufacturers, _config.Filter.FavoritesOnly);
+            _config.Filter.Decades, _config.Filter.Manufacturers, _config.Filter.Genres,
+            _config.Filter.FavoritesOnly);
 
         // Safety net for a saved filter that can't match THIS catalog (e.g. after switching
-        // ROM sets). Only the decade/manufacturer constraints are catalog-derived, so test
-        // those alone — favourites are mutable user state and an empty favourites pool is a
-        // normal, recoverable idle (the engine waits; starring a game nudges it back). So
+        // ROM sets, or a genre filter whose catver.ini has gone missing). Only the
+        // decade/manufacturer/genre constraints are catalog-derived, so test those alone —
+        // favourites are mutable user state and an empty favourites pool is a normal,
+        // recoverable idle (the engine waits; starring a game nudges it back). So
         // "favourites only" is kept even when nothing's favourited yet, and isn't silently
         // wiped (and persisted off) just because favorites.txt is empty here.
-        var metadata = new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers);
-        if (metadata.IsActive && !_db.All.Any(metadata.Matches))
+        var metadata = new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers, _db.Filter.Genres);
+        if (!metadata.IsActive || _db.All.Any(metadata.Matches))
+            return; // the saved filter is fine (or absent) — leave it be
+
+        // Nothing matches. A genre constraint with NO catver.ini loaded this session is a
+        // *transient* miss (the file lives on an offline share, or mame.exe just moved and
+        // catver.ini isn't beside it yet) — not a stale tag. Drop the genre in memory so the
+        // pool isn't stuck, but keep decade/manufacturer and — crucially — DON'T persist, so
+        // the saved genres return the moment catver.ini is readable again. Only fall through
+        // to the real clear-and-persist when the non-genre constraints are themselves the
+        // problem (a genuine catalog change), or catver data did load and the tag is just dead.
+        var withoutGenres = new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers);
+        bool catverLoaded = _db.All.Any(e => e.Genres is not null);
+        if (_db.Filter.Genres.Count > 0 && !catverLoaded
+            && (!withoutGenres.IsActive || _db.All.Any(withoutGenres.Matches)))
         {
-            _log.Warn("saved year/manufacturer filter matches no games in this catalog — clearing it");
-            _db.Filter = new GameFilter([], [], _db.Filter.FavoritesOnly);
-            PersistFilter();
-            StatusMessage = "Saved year/manufacturer filter matched no games here — cleared.";
+            _log.Warn("saved genre filter can't apply — no catver.ini this session; keeping it for next launch");
+            _db.Filter = new GameFilter(_db.Filter.Decades, _db.Filter.Manufacturers, null, _db.Filter.FavoritesOnly);
+            StatusMessage = "Genre filter paused — no catver.ini found this session.";
+            return; // deliberately no PersistFilter(): the saved genres survive on disk
         }
+
+        _log.Warn("saved year/manufacturer/genre filter matches no games in this catalog — clearing it");
+        _db.Filter = new GameFilter([], [], null, _db.Filter.FavoritesOnly);
+        PersistFilter();
+        StatusMessage = "Saved year/manufacturer/genre filter matched no games here — cleared.";
     }
 
     private void RefreshFilterOptions()
@@ -388,6 +453,13 @@ public sealed partial class MainViewModel : ObservableObject
             .GroupBy(e => e.Manufacturer, StringComparer.OrdinalIgnoreCase)
             .Select(g => new ManufacturerCount(g.First().Manufacturer, g.Count()))
             .OrderByDescending(m => m.Count).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        AvailableGenres = _db.All
+            .Where(e => e.Genres is not null)
+            .SelectMany(e => e.Genres!) // each game's tags are already de-duped, so one game = one vote per tag
+            .GroupBy(g => g, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new GenreCount(g.First(), g.Count()))
+            .OrderByDescending(g => g.Count).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         CatalogChanged?.Invoke();
     }
@@ -427,6 +499,36 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Attach catver.ini genres to the fresh catalog so the genre facet of
+    /// File → Filter lights up. Best-effort and quiet: no catver.ini (Attractor never
+    /// ships one), or an unreadable one, just leaves the genre submenu as a disabled
+    /// explainer. Runs inside the catalog build Task.Run, before the startup filter is
+    /// applied — a saved genre filter must be validated against real genre data.</summary>
+    private async Task ApplyGenresAsync(GameDatabase db, string mameExe)
+    {
+        try
+        {
+            var mameDir = Path.GetDirectoryName(mameExe)!;
+            var configured = _config.Mame.CatverPath;
+            var path = string.IsNullOrWhiteSpace(configured)
+                ? CatverIni.FindFile(mameDir)
+                : Path.GetFullPath(configured, mameDir);
+            if (path is null || !File.Exists(path))
+            {
+                _log.Info("no catver.ini found — genre filter hidden");
+                return;
+            }
+            var genres = await CatverIni.LoadAsync(path, _cts.Token).ConfigureAwait(false);
+            db.ApplyGenres(genres);
+            _log.Info($"catver: {path} ({genres.Count} categorised)");
+        }
+        catch (OperationCanceledException) { /* shutting down */ }
+        catch (Exception ex)
+        {
+            _log.Warn("couldn't load catver.ini; genre filter hidden", ex);
+        }
+    }
+
     private void PersistFilter()
     {
         _config = _config with
@@ -435,6 +537,7 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 Decades = _db!.Filter.Decades.OrderBy(d => d).ToList(),
                 Manufacturers = _db.Filter.Manufacturers.OrderBy(m => m, StringComparer.OrdinalIgnoreCase).ToList(),
+                Genres = _db.Filter.Genres.OrderBy(g => g, StringComparer.OrdinalIgnoreCase).ToList(),
                 FavoritesOnly = _db.Filter.FavoritesOnly,
             },
         };
@@ -472,20 +575,75 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task LoadHistoryAsync(string mameExe)
     {
         var wanted = _db!.All.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
-        var history = await Task.Run(async () =>
+        Dictionary<string, IReadOnlyList<AboutSection>> history;
+        try
         {
-            var path = await ResolveHistoryFileAsync(mameExe).ConfigureAwait(false);
-            if (path is null)
+            history = await Task.Run(async () =>
             {
-                _log.Info("no history file found (history.xml / history.dat) — side-panel trivia disabled");
-                return new Dictionary<string, string>(StringComparer.Ordinal);
-            }
-            _log.Info($"loading history: {path}");
-            return await HistoryDat.LoadAsync(path, wanted, ct: _cts.Token).ConfigureAwait(false);
-        });
+                var path = await ResolveHistoryFileAsync(mameExe).ConfigureAwait(false);
+                if (path is null)
+                {
+                    _log.Info("no history file found (history.xml / history.dat) — side-panel trivia disabled");
+                    return new Dictionary<string, IReadOnlyList<AboutSection>>(StringComparer.Ordinal);
+                }
+                _log.Info($"loading history: {path}");
+                return await HistoryDat.LoadAsync(path, wanted, ct: _cts.Token).ConfigureAwait(false);
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            return; // shutting down
+        }
+        catch (Exception ex)
+        {
+            // Fire-and-forget caller: without this, a malformed history file would
+            // kill the trivia panel with zero diagnostics.
+            _log.Warn("history load failed — side-panel trivia disabled", ex);
+            return;
+        }
         _history = history;
         if (_engine?.CurrentGame is { } current)
-            AboutText = _history.GetValueOrDefault(current, "");
+            SetAboutSections(_history.GetValueOrDefault(current, []));
+    }
+
+    // ---- ABOUT section carousel (UI thread) --------------------------------------
+
+    /// <summary>Point the side panel at a game's history sections: show the first
+    /// (the "ABOUT" lead) immediately and start cycling if there are more.</summary>
+    private void SetAboutSections(IReadOnlyList<AboutSection> sections)
+    {
+        _aboutSections = sections;
+        _aboutIndex = 0;
+        ShowAboutSection();
+    }
+
+    private void ShowAboutSection()
+    {
+        _aboutTimer.Stop();
+        if (_aboutSections.Count == 0)
+        {
+            AboutHeader = "ABOUT";
+            AboutText = "";
+            return;
+        }
+        var section = _aboutSections[_aboutIndex];
+        AboutHeader = _aboutSections.Count > 1
+            ? $"{section.Title}  ·  {_aboutIndex + 1}/{_aboutSections.Count}"
+            : section.Title;
+        AboutText = section.Body;
+        if (_aboutSections.Count > 1)
+            _aboutTimer.Start(); // restarted per section, so each gets its full dwell
+    }
+
+    private void AdvanceAboutSection()
+    {
+        if (_aboutSections.Count < 2)
+        {
+            _aboutTimer.Stop();
+            return;
+        }
+        _aboutIndex = (_aboutIndex + 1) % _aboutSections.Count;
+        ShowAboutSection();
     }
 
     // MAME has no single canonical home for history.xml/.dat: it may sit next to
@@ -526,7 +684,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     public async Task ShutdownAsync()
     {
+        _foregroundGuard.Dispose(); // unhook on the UI thread (the thread that installed it)
         _countdownTimer.Stop();
+        _aboutTimer.Stop();
         FlushVolumePersist(); // commit a slider/hotkey change still inside the debounce window
         _cts.Cancel();
         if (_engine is not null)
@@ -567,18 +727,22 @@ public sealed partial class MainViewModel : ObservableObject
         _gameDeadline = DateTimeOffset.Now.AddSeconds(_config.Rotation.DwellSeconds);
         StageMessage = "";
         StatusMessage = "";
-        AboutText = _history.GetValueOrDefault(game, "");
+        SetAboutSections(_history.GetValueOrDefault(game, []));
         _showMask = true; // show the snap during this game's launch gap
 
-        var marqueePath = _art!.FindMarquee(game);
-        var snapPath = _art.FindSnap(game);
-        _ = LoadArtAsync(game, marqueePath, snapPath);
+        _ = LoadArtAsync(game);
     }
 
-    private async Task LoadArtAsync(string game, string? marqueePath, string? snapPath)
+    private async Task LoadArtAsync(string game)
     {
-        var marquee = await Task.Run(() => ImageLoader.LoadFrozen(marqueePath));
-        var snap = await Task.Run(() => ImageLoader.LoadFrozen(snapPath));
+        // Probe AND load off the UI thread: the art dirs may sit on a network share,
+        // where even File.Exists can stall for seconds when the share is flaky.
+        var (marquee, snap) = await Task.Run(() =>
+        {
+            var art = _art!;
+            return (ImageLoader.LoadFrozen(art.FindMarquee(game)),
+                    ImageLoader.LoadFrozen(art.FindSnap(game)));
+        });
         if (_engine?.CurrentGame == game) // a skip may have raced us
         {
             MarqueeImage = marquee;
@@ -604,6 +768,10 @@ public sealed partial class MainViewModel : ObservableObject
             : entry.IsVertical ? new PixelSize(3, 4) : new PixelSize(4, 3);
 
         _embedder.Embed(w.Hwnd, _ownerHwnd, ApplyOrientationNudge(_hostRect()), aspect);
+        // Re-arm the focus backstop with this chunk's pid (and reset its per-chunk bounce cap)
+        // so a post-reveal foreground grab by *this* MAME is bounced back to the user's window.
+        if (!IsPlaying)
+            _foregroundGuard.Arm(w.Pid);
         // Each chunk is a brand-new process with a fresh audio session, so assert the
         // intended volume + mute every time (Windows may also have remembered a stale
         // per-app level for mame.exe from a previous run).
@@ -630,6 +798,25 @@ public sealed partial class MainViewModel : ObservableObject
             FaultVerdict.EngineFaulted => $"too many failures in a row — check that MAME/share is reachable",
             _ => $"\"{title}\" failed to run ({f.Kind}) — skipped",
         };
+    }
+
+    private void OnPlaySession(PlaySession p)
+    {
+        IsPlaying = p.Active;
+        PlayButtonLabel = p.Active ? "PLAYING…" : "PLAY THIS GAME";
+        PlayThisCommand.NotifyCanExecuteChanged();
+        // Leave MAME's focus alone during play; re-arm the backstop when the attract loop resumes.
+        if (p.Active) _foregroundGuard.Disarm(); else _foregroundGuard.Arm();
+        if (!p.Active)
+            return; // the engine restarts the game; OnGameChanged/OnWindowReady redress the UI
+
+        _currentPid = p.Pid;
+        StageMessage = "PLAYING\n\nquit MAME when you're done —\nthe rotation picks up where it left off";
+        StatusMessage = $"Playing \"{_db?.Find(p.Game)?.Title ?? p.Game}\"";
+        UpdateCountdown();
+        // The user asked to play, so sound follows — even if the attract loop was
+        // muted. Volume still honors the slider; Mute reasserts on the next chunk.
+        _ = ApplyAudioWithRetryAsync(p.Pid, forceUnmuted: true);
     }
 
     private void OnHoldChanged(bool held)
@@ -666,6 +853,12 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_engine is null) return;
         if (_engine.State is RotationState.Faulted or RotationState.Empty) return;
+        if (IsPlaying)
+        {
+            CountdownLabel = "PLAYING";
+            CountdownValue = "--:--";
+            return;
+        }
         if (_engine.IsHeld)
         {
             CountdownLabel = "ON HOLD";
@@ -686,13 +879,14 @@ public sealed partial class MainViewModel : ObservableObject
         FavoriteGlyph = fav ? "" : ""; // filled : outline star
     }
 
-    private async Task ApplyAudioWithRetryAsync(int pid)
+    private async Task ApplyAudioWithRetryAsync(int pid, bool forceUnmuted = false)
     {
         // The audio session only appears once MAME initializes sound; retry briefly.
-        // Volume + mute go in one session lookup so the chunk lands in a consistent state.
+        // Volume + mute go in one session lookup so the chunk lands in a consistent
+        // state. forceUnmuted is the play session's override of the attract mute.
         for (int i = 0; i < 12 && pid == _currentPid; i++)
         {
-            if (ProcessAudio.TrySetVolumeAndMute(pid, (float)GameVolume, IsMuted))
+            if (ProcessAudio.TrySetVolumeAndMute(pid, (float)GameVolume, !forceUnmuted && IsMuted))
                 return;
             await Task.Delay(400);
         }
@@ -778,6 +972,21 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand] private void Skip() { _sfx.PlayCoin(); _engine?.Skip(); }
     [RelayCommand] private void Hold() { _sfx.PlayClick(); _engine?.ToggleHold(); }
 
+    /// <summary>Hand the current game over for real play (see RotationEngine.PlayCurrent).
+    /// Disabled while a play session is live; harmless when the rotation is idle.</summary>
+    [RelayCommand(CanExecute = nameof(CanPlayThis))]
+    private void PlayThis()
+    {
+        _sfx.PlayCoin(); // inserting a coin — this one's for real
+        // Disarm BEFORE the play launch is queued (this runs synchronously on the UI thread; the
+        // play launch happens later on the worker thread) so the play window's intended focus
+        // grab is never bounced.
+        _foregroundGuard.Disarm();
+        _engine?.PlayCurrent();
+    }
+
+    private bool CanPlayThis() => !IsPlaying && _engine is not null;
+
     [RelayCommand]
     private void Ban()
     {
@@ -846,3 +1055,6 @@ public sealed partial class MainViewModel : ObservableObject
 
 /// <summary>A manufacturer and how many catalog games it has, for the filter menu.</summary>
 public sealed record ManufacturerCount(string Name, int Count);
+
+/// <summary>A catver.ini genre and how many catalog games it has, for the filter menu.</summary>
+public sealed record GenreCount(string Name, int Count);

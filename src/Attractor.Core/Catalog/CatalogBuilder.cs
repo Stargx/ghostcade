@@ -29,15 +29,27 @@ public static class CatalogBuilder
             var machines = new List<MachineInfo>();
             using (var proc = MameVerbRunner.Start(mameExePath, "-listxml"))
             {
-                var drainErr = proc.StandardError.ReadToEndAsync(ct);
-                await foreach (var machine in MameListXmlParser.ParseAsync(proc.StandardOutput.BaseStream, ct))
+                try
                 {
-                    machines.Add(machine);
-                    if (machines.Count % 500 == 0)
-                        progress?.Report(new ScanProgress("listxml", machines.Count));
+                    var drainErr = proc.StandardError.ReadToEndAsync(ct);
+                    await foreach (var machine in MameListXmlParser.ParseAsync(proc.StandardOutput.BaseStream, ct))
+                    {
+                        machines.Add(machine);
+                        if (machines.Count % 500 == 0)
+                            progress?.Report(new ScanProgress("listxml", machines.Count));
+                    }
+                    await proc.WaitForExitAsync(ct).ConfigureAwait(false);
+                    _ = await drainErr.ConfigureAwait(false);
                 }
-                await proc.WaitForExitAsync(ct).ConfigureAwait(false);
-                _ = await drainErr.ConfigureAwait(false);
+                catch
+                {
+                    // Cancel (wizard's Cancel-Scan) or a parse error mid-stream: kill the
+                    // child like RunLinesAsync does. Dispose alone doesn't — MAME would sit
+                    // orphaned forever, blocked writing 100+ MB of XML into a full pipe.
+                    try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); }
+                    catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+                    throw;
+                }
             }
             machinesCache = new MachinesCache(fingerprint, Build: null, machines);
             CacheStore.Save(machinesCachePath, machinesCache);

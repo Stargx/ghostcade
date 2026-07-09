@@ -37,9 +37,9 @@ public static class CacheStore
             };
             return fingerprint == expected ? cache : null;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            return null; // corrupt cache = no cache
+            return null; // corrupt or unreadable cache = no cache (rebuild), never a startup failure
         }
     }
 

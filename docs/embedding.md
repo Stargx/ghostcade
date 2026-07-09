@@ -13,10 +13,15 @@ it from alt-tab), owned by the app window (`GWL_HWNDPARENT` — rides our
 z-order, hides on minimize), and continuously positioned over the host region.
 
 Launch uses raw `CreateProcessW` because `ProcessStartInfo` cannot express:
-- `SW_SHOWNOACTIVATE` startup show command → **no focus steal** on launch
-  (MAME honors the STARTUPINFO show field — proven by SW_HIDE suppressing its
-  window entirely, which is also why `-WindowStyle Hidden`-style launches must
-  never be used).
+- The startup show command. Attract chunks launch **hidden** (`SW_HIDE`) → **no
+  focus steal** on launch. `SW_SHOWNOACTIVATE` was not enough: it only governs
+  MAME's first `ShowWindow`, not MAME's own `SetForegroundWindow` during video
+  init, which steals focus wherever `ForegroundLockTimeout == 0`. A hidden window
+  can't be foregrounded, so that grab no-ops. The locator finds the hidden window
+  (it does **not** gate on `IsWindowVisible`), the embedder styles it non-activating
+  + owned while hidden, then reveals it with `SW_SHOWNA` as its last act.
+  `ForegroundGuard` (an `EVENT_SYSTEM_FOREGROUND` hook) is the backstop for any
+  re-grab after reveal. A **play session** keeps `SW_SHOWNORMAL` (it should take focus).
 - `CREATE_SUSPENDED` → the process joins a kill-on-close job object before its
   first instruction; `CREATE_NO_WINDOW` stops console-subsystem MAME builds
   (0.147) popping a console from a GUI host.
@@ -34,7 +39,9 @@ Launch uses raw `CreateProcessW` because `ProcessStartInfo` cannot express:
 | Hard-kill host → MAME dies (job object) | — | PASS (`Attractor.Smoke jobtest`) |
 
 Window class is `"MAME"` on both generations (verified against 0.147 binary
-and mamedev master source); locator matches pid + visible + class.
+and mamedev master source); locator matches pid + class + a non-zero client rect
+(it no longer requires the window to be visible, since attract chunks are found
+while still hidden — see the launch-hidden note above).
 
 ## Outstanding (human-eyes checks, fold into M3 verification)
 

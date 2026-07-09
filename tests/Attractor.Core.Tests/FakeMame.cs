@@ -55,8 +55,12 @@ public sealed class FakeLauncher : IMameLauncher
 /// <summary>Returns a fake hwnd instantly unless the process already exited.</summary>
 public sealed class FakeWindowFinder : IGameWindowFinder
 {
+    /// <summary>False simulates a MAME that runs but never opens a window (the
+    /// NoWindow fault path) — the real locator would poll its timeout out.</summary>
+    public bool FindWindows { get; set; } = true;
+
     public Task<IntPtr> FindAsync(int pid, TimeSpan timeout, Func<bool> processHasExited, CancellationToken ct) =>
-        Task.FromResult(processHasExited() ? IntPtr.Zero : new IntPtr(0xBEEF));
+        Task.FromResult(!FindWindows || processHasExited() ? IntPtr.Zero : new IntPtr(0xBEEF));
 
     public PixelSize GetClientSize(IntPtr hwnd) => new(224, 288);
 }

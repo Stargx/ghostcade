@@ -30,8 +30,11 @@ public sealed partial record MameCapabilities(
     int RefreshHz = 60,
     string? RawBanner = null)
 {
-    /// <summary>Oldest MAME we attempt to drive. Below this the verbs/screens differ too much.</summary>
-    public const int MinSupportedMinor = 78;
+    /// <summary>Oldest MAME we support — we advertise and drive 0.147+ (equal to
+    /// <see cref="SecondsToRunFloorMinor"/>). The frames-mode path below still parses older
+    /// builds but gates them out: pre-0.147 used to work and has since regressed, so don't
+    /// just lower this — the frames-mode launch/embed path needs fixing first.</summary>
+    public const int MinSupportedMinor = 147;
 
     /// <summary>At/above this minor <c>-seconds_to_run</c> exists; below it we use <c>-frames_to_run</c>.</summary>
     public const int SecondsToRunFloorMinor = 147;
@@ -64,7 +67,7 @@ public sealed partial record MameCapabilities(
     /// <summary>
     /// Spawn <c>mame -help</c> and parse the first banner line that carries a
     /// version. Reuses the same verb seam that catalog/verify run on, which is
-    /// already proven across 0.78 → current.
+    /// already proven across 0.147 → current.
     /// </summary>
     public static async Task<MameCapabilities> DetectAsync(string mameExePath, CancellationToken ct = default)
     {

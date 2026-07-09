@@ -13,6 +13,8 @@
   <DockPanel>
     <Menu DockPanel.Dock="Top" Background="Transparent" Foreground="{StaticResource TextDim}">
       <MenuItem Header="_File">
+        <MenuItem Header="_Play this game" Command="{Binding PlayThisCommand}" InputGestureText="Ctrl+Alt+P"/>
+        <Separator/>
         <MenuItem Header="_Rescan ROMs" Command="{Binding RescanCommand}"/>
         <MenuItem Header="Setup _Wizard…" Click="SetupWizardMenu_Click"/>
         <MenuItem Header="_Open config folder" Command="{Binding OpenConfigFolderCommand}"/>
@@ -189,13 +191,44 @@
             <TextBlock Text="{Binding QueueText}" FontSize="12" Foreground="{StaticResource NeonCyan}"
                        HorizontalAlignment="Center" Margin="0,10,0,0" Opacity="0.85"/>
 
+            <!-- take the controls: kills the attract chunk and launches a real,
+                 focused, uncapped MAME session; rotation resumes when it exits -->
+            <Button Command="{Binding PlayThisCommand}" HorizontalAlignment="Center" Margin="0,12,0,0"
+                    Cursor="Hand" Focusable="False"
+                    ToolTip="Play this game for real (Ctrl+Alt+P) — quit MAME to resume the rotation">
+              <Button.Template>
+                <ControlTemplate TargetType="Button">
+                  <Border x:Name="Frame" Background="#CC10101B" BorderBrush="{StaticResource Amber}"
+                          BorderThickness="2" CornerRadius="8" Padding="18,8">
+                    <Border.Effect>
+                      <DropShadowEffect Color="{StaticResource AmberColor}" BlurRadius="12" ShadowDepth="0" Opacity="0.55"/>
+                    </Border.Effect>
+                    <TextBlock x:Name="Label" FontFamily="{StaticResource PixelFont}" FontSize="12"
+                               Foreground="{StaticResource Amber}"
+                               Text="{Binding PlayButtonLabel}"/>
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter TargetName="Frame" Property="Background" Value="#FF241A08"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                      <Setter TargetName="Frame" Property="Background" Value="#FF382A0C"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                      <Setter TargetName="Frame" Property="Opacity" Value="0.55"/>
+                    </Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </Button.Template>
+            </Button>
+
             <Rectangle Height="2" Fill="{StaticResource NeonMagenta}" Opacity="0.65" Margin="0,14">
               <Rectangle.Effect>
                 <DropShadowEffect Color="{StaticResource MagentaColor}" BlurRadius="8" ShadowDepth="0" Opacity="0.8"/>
               </Rectangle.Effect>
             </Rectangle>
 
-            <TextBlock Text="ABOUT" FontFamily="{StaticResource PixelFont}" FontSize="11"
+            <TextBlock Text="{Binding AboutHeader}" FontFamily="{StaticResource PixelFont}" FontSize="11"
                        Foreground="{StaticResource Amber}"/>
             <TextBlock Text="{Binding AboutText}" Style="{StaticResource DimText}" Margin="0,8,0,0"
                        MaxHeight="150" TextTrimming="WordEllipsis" LineHeight="19" FontSize="12"/>

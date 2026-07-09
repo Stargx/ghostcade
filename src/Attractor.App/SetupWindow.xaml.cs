@@ -41,6 +41,9 @@ public partial class SetupWindow : Window
         _existing = existing ?? new AppConfig();
         _reSetup = reSetup;
         SourceInitialized += (_, _) => Dwm.ApplyDarkTitleBar(this);
+        // A scan must not outlive the wizard: left running it would keep spawning
+        // MAME and rewriting the shared caches behind the (still running) app.
+        Closed += (_, _) => _scanCts?.Cancel();
         PrefillFromExisting();
     }
 
@@ -89,10 +92,21 @@ public partial class SetupWindow : Window
     private async void MamePathBox_TextChanged(object sender, RoutedEventArgs e)
     {
         var path = MamePathBox.Text.Trim();
-        bool exists = path.Length > 4 && File.Exists(path);
         _caps = null;
         NextBtn.IsEnabled = false;
         ProbeText.Text = "";
+        // A completed scan belongs to the old exe — a different MAME must be
+        // rescanned, not started against stale results (page 3 gates on _scannedDb).
+        if (_scannedDb is not null)
+        {
+            _scannedDb = null;
+            ScanBtn.IsEnabled = true;
+            ScanProgressText.Text = "";
+        }
+        // Off the UI thread: File.Exists against a dead UNC path can stall for seconds.
+        bool exists = path.Length > 4 && await Task.Run(() => File.Exists(path));
+        if (MamePathBox.Text.Trim() != path) // user kept typing — stale result
+            return;
         if (!exists)
             return;
 
@@ -104,7 +118,7 @@ public partial class SetupWindow : Window
         ProbeText.Text = caps switch
         {
             null => "✗ no response — slow share, or this isn't MAME",
-            { Supported: false } => $"✗ MAME {caps.VersionLabel} is too old — Attractor needs 0.78 or newer",
+            { Supported: false } => $"✗ MAME {caps.VersionLabel} is too old — Attractor needs 0.147 or newer",
             _ => $"✓ MAME {caps.VersionLabel} detected",
         };
         // Block progress on an unsupported MAME so the user never reaches a
@@ -127,25 +141,39 @@ public partial class SetupWindow : Window
 
     // ---- page 2 ------------------------------------------------------------
 
-    private void ProbeArtDirs()
+    // Discriminates overlapping probes (the folders may be re-picked while one runs).
+    private int _artProbeSeq;
+
+    private async void ProbeArtDirs()
     {
         var mameDir = Path.GetDirectoryName(MamePathBox.Text.Trim())!;
         RefreshArtDefault(MarqueeDirBox, ref _marqueeAutoDir, mameDir, "marquees");
         RefreshArtDefault(SnapDirBox, ref _snapAutoDir, mameDir, "snap");
 
-        string Describe(string dir, string what)
+        // Counting PNGs / probing history can crawl on a network share — do it off
+        // the UI thread so page 2 doesn't freeze, and drop stale results.
+        var marqueeDir = MarqueeDirBox.Text;
+        var snapDir = SnapDirBox.Text;
+        int seq = ++_artProbeSeq;
+        ArtProbeText.Text = "checking folders…";
+        var text = await Task.Run(() =>
         {
-            if (!Directory.Exists(dir))
-                return $"✗ no {what} folder — text fallback will be used";
-            int count = Directory.EnumerateFiles(dir, "*.png").Count();
-            return $"✓ {what}: {count} images";
-        }
+            string Describe(string dir, string what)
+            {
+                if (!Directory.Exists(dir))
+                    return $"✗ no {what} folder — text fallback will be used";
+                int count = Directory.EnumerateFiles(dir, "*.png").Count();
+                return $"✓ {what}: {count} images";
+            }
 
-        var historyFile = HistoryDat.FindFile([mameDir, Path.Combine(mameDir, "history")]);
-        var history = historyFile is not null
-            ? $"✓ {Path.GetFileName(historyFile)} found — game trivia will appear in the side panel"
-            : "✗ no history.xml / history.dat next to MAME (optional; the ROMs folder is also searched at runtime)";
-        ArtProbeText.Text = $"{Describe(MarqueeDirBox.Text, "marquees")}\n{Describe(SnapDirBox.Text, "snapshots")}\n{history}";
+            var historyFile = HistoryDat.FindFile([mameDir, Path.Combine(mameDir, "history")]);
+            var history = historyFile is not null
+                ? $"✓ {Path.GetFileName(historyFile)} found — game trivia will appear in the side panel"
+                : "✗ no history.xml / history.dat next to MAME (optional; the ROMs folder is also searched at runtime)";
+            return $"{Describe(marqueeDir, "marquees")}\n{Describe(snapDir, "snapshots")}\n{history}";
+        });
+        if (seq == _artProbeSeq)
+            ArtProbeText.Text = text;
     }
 
     // Point a box at "<mameDir>\<name>" when it's empty or still holds the
@@ -266,7 +294,10 @@ public partial class SetupWindow : Window
             NextBtn.IsEnabled = true;
         }
         if (_page == 3)
+        {
+            NextBtn.Content = _scannedDb is not null ? "START ATTRACTOR ▶" : "NEXT ▶";
             NextBtn.IsEnabled = _scannedDb is { } db && db.All.Count > 0;
+        }
         if (_page == 1)
         {
             NextBtn.Content = "NEXT ▶";

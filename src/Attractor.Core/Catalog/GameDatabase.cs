@@ -25,6 +25,21 @@ public sealed class GameDatabase
 
     public GameEntry? Find(string name) => _byName.GetValueOrDefault(name);
 
+    /// <summary>Attach catver.ini genre tags to the catalog (catver loads separately from
+    /// -listxml, so this runs post-assembly, before the engine starts). A clone missing
+    /// from catver falls back to its parent's tags; games still unmatched keep a null
+    /// genre and only pass the filter while no genre constraint is active.</summary>
+    public void ApplyGenres(IReadOnlyDictionary<string, IReadOnlyList<string>> genres)
+    {
+        foreach (var name in _byName.Keys.ToArray())
+        {
+            var entry = _byName[name];
+            if (genres.TryGetValue(name, out var tags)
+                || (entry.CloneOf is { } parent && genres.TryGetValue(parent, out tags)))
+                _byName[name] = entry with { Genres = tags };
+        }
+    }
+
     /// <summary>Names eligible for rotation right now (bans and the filter apply live).</summary>
     public IReadOnlyList<string> RotationPool() =>
         _byName.Values.Where(e => !Banned.Contains(e.Name) && Passes(e)).Select(e => e.Name).ToArray();

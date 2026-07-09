@@ -25,6 +25,10 @@ public partial class SpikeWindow : Window
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetShellWindow();
 
     public SpikeWindow()
     {
@@ -146,7 +150,17 @@ public partial class SpikeWindow : Window
         var log = new List<string>();
         void L(string line) { log.Add(line); }
 
+        // Relinquish foreground BEFORE launching MAME so this is a background launch — the
+        // real ambient-wallpaper scenario (the user is typing in another app). A foreground
+        // launcher would confer the one-time SetForegroundWindow grant on the MAME child,
+        // masking the real behavior (MAME would then legitimately reach the foreground). The
+        // shell/desktop is a convenient neutral window to hand foreground to.
+        var shell = GetShellWindow();
+        if (shell != IntPtr.Zero)
+            SetForegroundWindow(shell);
+        await Task.Delay(300);
         var foregroundBefore = GetForegroundWindow();
+        L($"BG-LAUNCH relinquished-to-shell foreground=0x{foregroundBefore:X} isThisApp={foregroundBefore == new WindowInteropHelper(this).Handle}");
         var t0 = Environment.TickCount64;
 
         var (hwnd, native) = await LaunchAndEmbedAsync(mamePath, game);
@@ -167,10 +181,10 @@ public partial class SpikeWindow : Window
                       Near(expected.Width, actual.Width) && Near(expected.Height, actual.Height);
         L($"RECT expected={expected} actual={actual} ok={rectOk}");
 
-        // 2. focus did not move to MAME
+        // 2. focus did not move to MAME (a background-launched attract chunk must never steal it)
         var foregroundAfter = GetForegroundWindow();
         bool focusOk = foregroundAfter != hwnd;
-        L($"FOCUS mameForeground={foregroundAfter == hwnd} ok={focusOk}");
+        L($"FOCUS after=0x{foregroundAfter:X} mameForeground={foregroundAfter == hwnd} keptPriorForeground={foregroundAfter == foregroundBefore} ok={focusOk}");
 
         // 3. glue follows an app-window move
         Left += 60;

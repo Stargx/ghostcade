@@ -81,6 +81,64 @@ public class GameFilterTests
     }
 
     [Fact]
+    public void Genre_filter_matches_case_insensitively_and_excludes_games_without_genre_data()
+    {
+        var f = new GameFilter([], [], ["Shooter"]);
+        Assert.True(f.IsActive);
+        Assert.True(f.Matches(Game("a", "1987", "x") with { Genres = ["shooter"] }));
+        Assert.False(f.Matches(Game("b", "1987", "x") with { Genres = ["Maze"] }));
+        // no catver entry (or no catver.ini at all) = no genre = excluded while a
+        // genre constraint is active
+        Assert.False(f.Matches(Game("c", "1987", "x")));
+    }
+
+    [Fact]
+    public void Genre_filter_matches_any_of_a_games_tags()
+    {
+        // Final Fight is "Fighter / 2.5D" — both tags must be selectable, and either
+        // one (or an overlap) qualifies the game. This is the bug being fixed.
+        var ffight = Game("ffight", "1989", "Capcom") with { Genres = ["Fighter", "2.5D"] };
+        Assert.True(new GameFilter([], [], ["Fighter"]).Matches(ffight));         // top-level tag
+        Assert.True(new GameFilter([], [], ["2.5D"]).Matches(ffight));            // subgenre tag
+        Assert.True(new GameFilter([], [], ["Shooter", "2.5D"]).Matches(ffight)); // any overlap qualifies
+        Assert.False(new GameFilter([], [], ["Shooter"]).Matches(ffight));        // no shared tag
+    }
+
+    [Fact]
+    public void Genre_combines_with_decade_and_manufacturer_with_and()
+    {
+        var f = new GameFilter([1980], ["Capcom"], ["Shooter"]);
+        Assert.True(f.Matches(Game("a", "1987", "Capcom") with { Genres = ["Shooter"] }));
+        Assert.False(f.Matches(Game("b", "1987", "Capcom") with { Genres = ["Fighter"] })); // wrong genre
+        Assert.False(f.Matches(Game("c", "1997", "Capcom") with { Genres = ["Shooter"] })); // wrong decade
+    }
+
+    [Fact]
+    public void ApplyGenres_attaches_tags_with_clone_fallback_and_filters_on_any_tag()
+    {
+        MachineInfo[] machines =
+        [
+            new("puckman",  "Puck Man",  "1980", "Namco", false, false, true, null,      DriverStatus.Good, 90),
+            new("puckmanb", "Puck Man B","1980", "Namco", false, false, true, "puckman", DriverStatus.Good, 90),
+            new("mystery",  "Mystery",   "1984", "Nobody", false, false, true, null,     DriverStatus.Good, 0),
+        ];
+        var verified = machines.ToDictionary(m => m.Name, _ => VerifyResult.Good);
+        var db = GameDatabase.Assemble(machines, verified, new InMemoryTagStore(), new InMemoryTagStore());
+
+        db.ApplyGenres(new Dictionary<string, IReadOnlyList<string>> { ["puckman"] = ["Maze", "Collect"] });
+
+        Assert.Equal(["Maze", "Collect"], db.Find("puckman")!.Genres);
+        Assert.Equal(["Maze", "Collect"], db.Find("puckmanb")!.Genres); // clone inherits its parent's tags
+        Assert.Null(db.Find("mystery")!.Genres);
+
+        db.Filter = new GameFilter([], [], ["Maze"]);                    // top-level tag
+        Assert.Equal(["puckman", "puckmanb"], db.RotationPool().OrderBy(x => x));
+
+        db.Filter = new GameFilter([], [], ["Collect"]);                 // subgenre tag pulls the same games
+        Assert.Equal(["puckman", "puckmanb"], db.RotationPool().OrderBy(x => x));
+    }
+
+    [Fact]
     public void FavoritesOnly_makes_the_filter_active_but_is_not_part_of_metadata_match()
     {
         var f = new GameFilter([], [], favoritesOnly: true);

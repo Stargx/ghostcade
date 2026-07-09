@@ -2,7 +2,11 @@ using System.Globalization;
 
 namespace Attractor.Core.Mame;
 
-/// <summary>One MAME game session (a single dwell chunk).</summary>
+/// <summary>One MAME game session — a dwell chunk, or (with <paramref name="PlayMode"/>)
+/// a real hands-on play session: launched activated (taking focus is the point),
+/// no time cap (pass 0 seconds), and with the mouse left available for
+/// trackball/spinner games. Play sessions live outside the &lt;300s rule — a human
+/// is at the keyboard, so MAME's "press a key" warnings aren't fatal there.</summary>
 public sealed record MameLaunchSpec(
     string MameExePath,
     string GameName,
@@ -10,7 +14,8 @@ public sealed record MameLaunchSpec(
     IReadOnlyList<string>? ExtraArgs = null,
     bool Windowed = true,
     MameTimingMode TimingMode = MameTimingMode.SecondsToRun,
-    int RefreshHz = 60)
+    int RefreshHz = 60,
+    bool PlayMode = false)
 {
     public string WorkingDirectory => Path.GetDirectoryName(MameExePath)!;
 
@@ -26,7 +31,8 @@ public sealed record MameLaunchSpec(
         // instead auto-suppresses startup screens while the run stays < 300s.
         if (TimingMode == MameTimingMode.FramesToRun)
             args.Add("-skip_disclaimer");
-        args.Add("-nomouse");
+        if (!PlayMode)
+            args.Add("-nomouse");
         if (Windowed)
         {
             args.Add("-window");

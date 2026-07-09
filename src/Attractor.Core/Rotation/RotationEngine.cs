@@ -26,7 +26,12 @@ public sealed class RotationEngine : IAsyncDisposable
     private readonly ILog _log;
     private readonly Func<string, bool>? _filteredOut;
 
-    private readonly Channel<EngineCommand> _commands = Channel.CreateUnbounded<EngineCommand>();
+    // Commands carry the game they were aimed at (when it matters): a Ban issued in
+    // the inter-game gap must ban the game the user was looking at, not whatever
+    // happens to be current when the loop reads the queue.
+    private readonly record struct Command(EngineCommand Kind, string? Game = null);
+
+    private readonly Channel<Command> _commands = Channel.CreateUnbounded<Command>();
     private readonly ShuffleBag _bag;
     private readonly PlayHistory _history = new();
     private readonly FaultPolicy _faults;
@@ -91,25 +96,33 @@ public sealed class RotationEngine : IAsyncDisposable
     public event Action<RotationState>? StateChanged;
     public event Action<GameFault>? GameFaulted;
     public event Action<bool>? HoldChanged;
+    public event Action<PlaySession>? PlaySessionChanged;
 
     // ---- commands (thread-safe, callable from UI/hotkeys) ----------------------
 
-    public void Skip() => _commands.Writer.TryWrite(EngineCommand.Skip);
-    public void Previous() => _commands.Writer.TryWrite(EngineCommand.Previous);
-    public void ToggleHold() => _commands.Writer.TryWrite(EngineCommand.ToggleHold);
-    public void Ban() => _commands.Writer.TryWrite(EngineCommand.Ban);
+    public void Skip() => _commands.Writer.TryWrite(new(EngineCommand.Skip));
+    public void Previous() => _commands.Writer.TryWrite(new(EngineCommand.Previous));
+    public void ToggleHold() => _commands.Writer.TryWrite(new(EngineCommand.ToggleHold));
+    /// <summary>Ban what's showing right now: the target is captured here, at press time,
+    /// so a ban landing in the gap between games can't hit the wrong game.</summary>
+    public void Ban() => _commands.Writer.TryWrite(new(EngineCommand.Ban, CurrentGame));
     /// <summary>Re-evaluate the eligible pool: wakes an idle (empty-pool) loop to try
     /// drawing again; harmlessly ignored while a game is playing. Call after the
     /// filter/bans change so a newly non-empty pool resumes without waiting.</summary>
-    public void Nudge() => _commands.Writer.TryWrite(EngineCommand.Reevaluate);
+    public void Nudge() => _commands.Writer.TryWrite(new(EngineCommand.Reevaluate));
     /// <summary>Discard the current shuffle cycle and reseed it from the live pool, then
     /// persist the fresh snapshot. Call after a filter change so widened-in games are dealt
     /// promptly and rotation-state reflects the new pool. The current game keeps playing —
     /// evicting a now-ineligible one is the host's separate decision (via <see cref="Skip"/>).</summary>
-    public void Rebag() => _commands.Writer.TryWrite(EngineCommand.Rebag);
+    public void Rebag() => _commands.Writer.TryWrite(new(EngineCommand.Rebag));
     /// <summary>Retune the per-game dwell on the fly. Takes effect from the next game —
     /// the one currently playing keeps the timeout it launched with. Thread-safe.</summary>
     public void SetDwellSeconds(int seconds) => _dwellSeconds = Math.Max(1, seconds);
+    /// <summary>Hand the current game over for real play: the attract chunk is killed and
+    /// a fresh MAME launches with no time cap, activated (it takes focus — that's the
+    /// point) and un-embedded. When the user quits MAME the rotation restarts the same
+    /// game and carries on. Ignored while the pool is idle (nothing to play).</summary>
+    public void PlayCurrent() => _commands.Writer.TryWrite(new(EngineCommand.PlayCurrent));
 
     public Task StartAsync(CancellationToken shutdown)
     {
@@ -121,7 +134,7 @@ public sealed class RotationEngine : IAsyncDisposable
 
     public async Task StopAsync()
     {
-        _commands.Writer.TryWrite(EngineCommand.Stop);
+        _commands.Writer.TryWrite(new Command(EngineCommand.Stop));
         if (_loopTask is not null)
             await _loopTask.ConfigureAwait(false);
     }
@@ -188,6 +201,21 @@ public sealed class RotationEngine : IAsyncDisposable
     private bool Excluded(string game) =>
         _banned.Contains(game) || _faults.IsQuarantined(game) || (_filteredOut?.Invoke(game) ?? false);
 
+    /// <summary>Record a ban. The write-through to banned.txt is best-effort like every
+    /// other persisted write (the data folder may be a locked/offline share) — the
+    /// in-memory ban always sticks; only the file may miss it.</summary>
+    private void BanGame(string game)
+    {
+        try
+        {
+            _banned.Add(game);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warn($"couldn't persist ban for {game}", ex);
+        }
+    }
+
     /// <summary>Idle until a command arrives (used when the eligible pool is empty).
     /// Returns false if that command was Stop (or the engine is shutting down), so
     /// the caller ends the loop; true means "try drawing again".</summary>
@@ -197,7 +225,11 @@ public sealed class RotationEngine : IAsyncDisposable
             return false;
         bool stop = false;
         while (_commands.Reader.TryRead(out var command)) // drain the burst; one redraw
-            stop |= command == EngineCommand.Stop;
+        {
+            stop |= command.Kind == EngineCommand.Stop;
+            if (command.Kind == EngineCommand.Ban && command.Game is { } target)
+                BanGame(target); // a ban aimed at the last game shown still lands while idle
+        }
         return !stop;
     }
 
@@ -275,8 +307,20 @@ public sealed class RotationEngine : IAsyncDisposable
     private async Task<ChunkResult> RunChunkAsync(string game, int chunkSeconds, CancellationToken ct)
     {
         _proc?.Dispose();
-        _proc = _launcher.Launch(new MameLaunchSpec(
-            _mameExePath, game, chunkSeconds, _extraArgs, TimingMode: _timingMode, RefreshHz: _refreshHz));
+        _proc = null;
+        try
+        {
+            _proc = _launcher.Launch(new MameLaunchSpec(
+                _mameExePath, game, chunkSeconds, _extraArgs, TimingMode: _timingMode, RefreshHz: _refreshHz));
+        }
+        catch (Exception ex)
+        {
+            // CreateProcessW itself failed — moved exe, dead share. Route it through
+            // FaultPolicy like any other launch problem so repeats escalate to the
+            // Faulted state ("MAME unreachable") instead of silently killing the loop.
+            _log.Warn($"launch failed for {game}: {ex.Message}");
+            return Fault(game, GameFaultKind.LaunchFailed, null);
+        }
         var proc = _proc;
         var started = Stopwatch.StartNew();
 
@@ -307,6 +351,9 @@ public sealed class RotationEngine : IAsyncDisposable
 
             if (winner == exitTask)
             {
+                // Await it: a shutdown-cancelled wait must rethrow here, not read as a
+                // finished chunk (which would launch a fresh MAME mid-shutdown).
+                await exitTask.ConfigureAwait(false);
                 bool crashed = proc.ExitCode is { } code && code != 0 &&
                                started.Elapsed < TimeSpan.FromSeconds(_options.CrashWindowSeconds);
                 return crashed
@@ -324,7 +371,7 @@ public sealed class RotationEngine : IAsyncDisposable
             // command available
             if (!_commands.Reader.TryRead(out var command))
                 continue;
-            switch (command)
+            switch (command.Kind)
             {
                 case EngineCommand.ToggleHold:
                     IsHeld = !IsHeld;
@@ -348,9 +395,25 @@ public sealed class RotationEngine : IAsyncDisposable
                     return await KillAndAdvance();
 
                 case EngineCommand.Ban:
-                    _banned.Add(game);
+                    // Ban the game the press was aimed at. When that's a *previous* game
+                    // (the command landed in the inter-game gap), the current one isn't
+                    // banned — record it and play on.
+                    var target = command.Game ?? game;
+                    BanGame(target);
+                    if (target != game)
+                        continue;
                     _pendingNav = Navigation.Forward;
                     return await KillAndAdvance();
+
+                case EngineCommand.PlayCurrent:
+                    proc.Kill();
+                    await proc.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                    if (await RunPlaySessionAsync(game, ct).ConfigureAwait(false))
+                        return ChunkResult.CommandStop;
+                    // Same game, fresh dwell — the attract loop picks up where the
+                    // user left off. Manual: the resume is user-caused, no coin chime.
+                    _pendingNav = Navigation.RestartCurrent;
+                    return ChunkResult.CommandAdvance;
 
                 case EngineCommand.Stop:
                     proc.Kill();
@@ -364,6 +427,60 @@ public sealed class RotationEngine : IAsyncDisposable
             proc.Kill();
             await proc.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             return ChunkResult.CommandAdvance;
+        }
+    }
+
+    /// <summary>The hands-on play session: one uncapped, activated MAME run of
+    /// <paramref name="game"/>. No watchdog and no fault-recording — a human owns the
+    /// session, and however long they play (or however MAME exits) isn't a health
+    /// signal. Rotation commands arriving mid-play are swallowed: Skip/Previous/Ban
+    /// make no sense while the user holds the controls, and honoring a stray global
+    /// hotkey would yank the game out from under them. Only Stop (or shutdown) ends
+    /// the session early; returns true in that case so the caller stops the loop.</summary>
+    private async Task<bool> RunPlaySessionAsync(string game, CancellationToken ct)
+    {
+        _log.Info($"play session: {game}");
+        _proc?.Dispose();
+        _proc = null;
+        try
+        {
+            _proc = _launcher.Launch(new MameLaunchSpec(
+                _mameExePath, game, SecondsToRun: 0, _extraArgs,
+                TimingMode: _timingMode, RefreshHz: _refreshHz, PlayMode: true));
+        }
+        catch (Exception ex)
+        {
+            // Couldn't start the play session (share died?). Resume the attract loop —
+            // its own relaunch of the same game will fault through FaultPolicy properly.
+            _log.Warn($"play launch failed for {game}: {ex.Message}");
+            return false;
+        }
+        var proc = _proc;
+        PlaySessionChanged?.Invoke(new PlaySession(game, Active: true, proc.Pid));
+        try
+        {
+            var exitTask = proc.WaitForExitAsync(ct);
+            while (true)
+            {
+                var commandReady = _commands.Reader.WaitToReadAsync(ct).AsTask();
+                var winner = await Task.WhenAny(exitTask, commandReady).ConfigureAwait(false);
+                if (winner == exitTask)
+                {
+                    await exitTask.ConfigureAwait(false); // propagate a shutdown cancellation
+                    _log.Info($"play session ended: {game}");
+                    return false;
+                }
+                if (_commands.Reader.TryRead(out var command) && command.Kind == EngineCommand.Stop)
+                {
+                    proc.Kill();
+                    await proc.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                    return true;
+                }
+            }
+        }
+        finally
+        {
+            PlaySessionChanged?.Invoke(new PlaySession(game, Active: false, proc.Pid));
         }
     }
 

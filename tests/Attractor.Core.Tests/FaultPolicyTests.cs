@@ -38,6 +38,22 @@ public class FaultPolicyTests
     }
 
     [Fact]
+    public void A_success_clears_the_global_fault_window()
+    {
+        // 4 rapid faults, then one game runs fine: the streak is broken, so the
+        // next fault must count as 1-of-5 again, not tip the engine over.
+        var time = new FakeTime();
+        var p = new FaultPolicy(time);
+        for (int i = 0; i < 4; i++)
+        {
+            p.RecordFault($"g{i}");
+            time.Now += TimeSpan.FromSeconds(5);
+        }
+        p.RecordSuccess("healthy");
+        Assert.Equal(FaultVerdict.SkipGame, p.RecordFault("another"));
+    }
+
+    [Fact]
     public void Slow_faults_do_not_fault_the_engine()
     {
         var time = new FakeTime();

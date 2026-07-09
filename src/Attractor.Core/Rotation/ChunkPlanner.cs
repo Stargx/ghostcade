@@ -7,7 +7,7 @@ namespace Attractor.Core.Rotation;
 /// warning — which it does while 0 &lt; run &lt; 300s (`str &lt; 60*5` in ui.cpp).
 /// The planner is version-agnostic: it always works in seconds, and
 /// MameLaunchSpec emits the right flag per build (-seconds_to_run for 0.147 →
-/// current, -frames_to_run = seconds × refresh for legacy 0.78+). Longer dwells
+/// current, -frames_to_run = seconds × refresh for the legacy pre-0.147 path). Longer dwells
 /// relaunch the same game per chunk.
 /// </summary>
 public static class ChunkPlanner

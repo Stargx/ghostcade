@@ -26,10 +26,10 @@ jobs:
         run: dotnet test Attractor.slnx -c Release
 
       - name: Publish (framework-dependent, for the installer)
-        run: dotnet publish src/Attractor.App -c Release -o publish/fdd
+        run: dotnet publish src/Attractor.App -c Release -p:Version=${{ steps.ver.outputs.version }} -o publish/fdd
 
       - name: Publish (self-contained, for the portable zip)
-        run: dotnet publish src/Attractor.App -c Release -r win-x64 --self-contained -o publish/sc
+        run: dotnet publish src/Attractor.App -c Release -r win-x64 --self-contained -p:Version=${{ steps.ver.outputs.version }} -o publish/sc
 
       - name: Portable zip
         shell: pwsh

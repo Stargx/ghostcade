@@ -32,7 +32,21 @@ internal static class NativeMethods
     public const uint CREATE_SUSPENDED = 0x00000004;
     public const uint CREATE_NO_WINDOW = 0x08000000;
     public const int STARTF_USESHOWWINDOW = 0x00000001;
+    public const short SW_HIDE = 0;
+    public const short SW_SHOWNORMAL = 1;
     public const short SW_SHOWNOACTIVATE = 4;
+    // Show a window in its current state WITHOUT activating it (used to reveal an
+    // attract window that was launched hidden and then styled non-activating).
+    public const int SW_SHOWNA = 8;
+
+    // ---- foreground / WinEvent hook -----------------------------------------
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+    public const int OBJID_WINDOW = 0;
+
+    public delegate void WinEventProc(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
+        int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
     public const int JobObjectExtendedLimitInformation = 9;
     public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
@@ -97,6 +111,13 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] public static extern IntPtr SetParent(IntPtr child, IntPtr newParent);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc,
+        WinEventProc lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+    [DllImport("user32.dll")] public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
     private static extern int GetWindowLong32(IntPtr hWnd, int index);
@@ -124,8 +145,10 @@ internal static class NativeMethods
         uint creationFlags, IntPtr environment, string? currentDirectory,
         ref STARTUPINFOW startupInfo, out PROCESS_INFORMATION processInformation);
 
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentProcessId();
     [DllImport("kernel32.dll", SetLastError = true)] public static extern uint ResumeThread(IntPtr hThread);
     [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern bool TerminateProcess(IntPtr hProcess, uint exitCode);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr CreateJobObjectW(IntPtr attributes, string? name);
     [DllImport("kernel32.dll", SetLastError = true)]

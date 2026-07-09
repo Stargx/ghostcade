@@ -24,6 +24,9 @@ public partial class MainWindow : Window
     private MenuItem? _filterCountItem;
     private MenuItem? _filterClearItem;
     private const int CommonManufacturerCount = 25;
+    // Genres flatten to a lot of subgenre tags (catver.ini has 500+); the long tail goes
+    // behind the same searchable "More…" picker the manufacturer list uses.
+    private const int CommonGenreCount = 30;
 
     // Layout mode: full cabinet vs slim. Hysteresis avoids flicker right at the
     // threshold (go slim under 1080 tall, return to full only once back over 1120).
@@ -72,6 +75,7 @@ public partial class MainWindow : Window
         _hotkeys.Register(hk.Hold, () => _vm.HoldCommand.Execute(null));
         _hotkeys.Register(hk.Ban, () => _vm.BanCommand.Execute(null));
         _hotkeys.Register(hk.Favorite, () => _vm.FavoriteCommand.Execute(null));
+        _hotkeys.Register(hk.Play, () => _vm.PlayThisCommand.Execute(null));
         _hotkeys.Register(hk.Mute, () => _vm.MuteCommand.Execute(null));
         _hotkeys.Register(hk.VolumeUp, () => _vm.VolumeUpCommand.Execute(null));
         _hotkeys.Register(hk.VolumeDown, () => _vm.VolumeDownCommand.Execute(null));
@@ -286,6 +290,30 @@ public partial class MainWindow : Window
         }
         FilterMenu.Items.Add(manMenu);
 
+        // Genres come from a user-supplied catver.ini; with none found the submenu
+        // stays as a disabled explainer rather than vanishing (discoverability).
+        var genreMenu = _vm.AvailableGenres.Count > 0
+            ? new MenuItem { Header = "_Genre" }
+            : new MenuItem { Header = "_Genre (needs catver.ini next to mame.exe)", IsEnabled = false };
+        foreach (var g in _vm.AvailableGenres.Take(CommonGenreCount))
+        {
+            var item = new MenuItem
+            {
+                Header = $"{g.Name} ({g.Count})", IsCheckable = true, StaysOpenOnClick = true,
+                IsChecked = filter.Genres.Contains(g.Name), Tag = g.Name,
+            };
+            item.Click += GenreItem_Click;
+            genreMenu.Items.Add(item);
+        }
+        if (_vm.AvailableGenres.Count > CommonGenreCount)
+        {
+            genreMenu.Items.Add(new Separator());
+            var more = new MenuItem { Header = "_More…" };
+            more.Click += (_, _) => OpenGenrePicker();
+            genreMenu.Items.Add(more);
+        }
+        FilterMenu.Items.Add(genreMenu);
+
         var favItem = new MenuItem
         {
             Header = "_Favourites only", IsCheckable = true, StaysOpenOnClick = true,
@@ -322,6 +350,15 @@ public partial class MainWindow : Window
         SyncFilterStatusItems();
     }
 
+    private void GenreItem_Click(object sender, RoutedEventArgs e)
+    {
+        var item = (MenuItem)sender;
+        var genre = (string)item.Tag;
+        _vm.ToggleGenre(genre);
+        item.IsChecked = _vm.ActiveFilter.Genres.Contains(genre);
+        SyncFilterStatusItems();
+    }
+
     private void FavoritesOnlyItem_Click(object sender, RoutedEventArgs e)
     {
         _vm.ToggleFavoritesOnly();
@@ -331,13 +368,32 @@ public partial class MainWindow : Window
 
     private void OpenManufacturerPicker()
     {
-        var dialog = new ManufacturerFilterWindow(_vm.AvailableManufacturers, _vm.ActiveFilter.Manufacturers) { Owner = this };
+        var dialog = new FacetPickerWindow(
+            "Filter — manufacturers", "MANUFACTURERS",
+            "Tick any to include. Nothing ticked = all manufacturers.",
+            _vm.AvailableManufacturers.Select(m => (m.Name, m.Count)),
+            _vm.ActiveFilter.Manufacturers) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
-            _vm.SetManufacturers(dialog.SelectedManufacturers);
+            _vm.SetManufacturers(dialog.SelectedNames);
             BuildFilterMenu(); // reflect the new selection on next open
             // The modal dialog already closed the Filter menu, so the deferred eviction can
             // run now — there's no open menu for the relaunch to dismiss.
+            _vm.EvictCurrentIfFilteredOut();
+        }
+    }
+
+    private void OpenGenrePicker()
+    {
+        var dialog = new FacetPickerWindow(
+            "Filter — genres", "GENRES",
+            "Tick any to include. Nothing ticked = all genres.",
+            _vm.AvailableGenres.Select(g => (g.Name, g.Count)),
+            _vm.ActiveFilter.Genres) { Owner = this };
+        if (dialog.ShowDialog() == true)
+        {
+            _vm.SetGenres(dialog.SelectedNames);
+            BuildFilterMenu(); // reflect the new selection on next open
             _vm.EvictCurrentIfFilteredOut();
         }
     }
