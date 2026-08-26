@@ -68,6 +68,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _stageMessage = "LOADING CATALOG…";
     [ObservableProperty] private string _aboutHeader = "ABOUT";
     [ObservableProperty] private string _aboutText = "";
+    [ObservableProperty] private bool _hasMultipleAboutSections; // gates the ABOUT "next" button
     [ObservableProperty] private string _holdLabel = "HOLD";
     [ObservableProperty] private string _muteLabel = "SOUND ON";
     [ObservableProperty] private string _playButtonLabel = "PLAY THIS GAME";
@@ -624,14 +625,17 @@ public sealed partial class MainViewModel : ObservableObject
         {
             AboutHeader = "ABOUT";
             AboutText = "";
+            HasMultipleAboutSections = false;
             return;
         }
         var section = _aboutSections[_aboutIndex];
-        AboutHeader = _aboutSections.Count > 1
+        bool many = _aboutSections.Count > 1;
+        HasMultipleAboutSections = many; // show the Next button only when there's more than one
+        AboutHeader = many
             ? $"{section.Title}  ·  {_aboutIndex + 1}/{_aboutSections.Count}"
             : section.Title;
         AboutText = section.Body;
-        if (_aboutSections.Count > 1)
+        if (many)
             _aboutTimer.Start(); // restarted per section, so each gets its full dwell
     }
 
@@ -644,6 +648,16 @@ public sealed partial class MainViewModel : ObservableObject
         }
         _aboutIndex = (_aboutIndex + 1) % _aboutSections.Count;
         ShowAboutSection();
+    }
+
+    /// <summary>Manually advance to the next ABOUT/history section. Reuses the auto-cycle path,
+    /// so the dwell timer resets (via ShowAboutSection) and the new section gets its full time
+    /// before the next automatic advance.</summary>
+    [RelayCommand]
+    private void NextAboutSection()
+    {
+        _sfx.PlayClick();
+        AdvanceAboutSection();
     }
 
     // MAME has no single canonical home for history.xml/.dat: it may sit next to

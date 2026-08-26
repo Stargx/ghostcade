@@ -228,8 +228,41 @@
               </Rectangle.Effect>
             </Rectangle>
 
-            <TextBlock Text="{Binding AboutHeader}" FontFamily="{StaticResource PixelFont}" FontSize="11"
-                       Foreground="{StaticResource Amber}"/>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="{Binding AboutHeader}" VerticalAlignment="Center"
+                         FontFamily="{StaticResource PixelFont}" FontSize="11"
+                         Foreground="{StaticResource Amber}"/>
+              <!-- manual section-advance; only shown when the game has more than one history section -->
+              <Button Grid.Column="1" Command="{Binding NextAboutSectionCommand}"
+                      Visibility="{Binding HasMultipleAboutSections, Converter={StaticResource BoolToVis}}"
+                      Cursor="Hand" Focusable="False" VerticalAlignment="Center" ToolTip="Next section">
+                <Button.Template>
+                  <ControlTemplate TargetType="Button">
+                    <Border x:Name="Frame" Background="#CC10101B" BorderBrush="{StaticResource Amber}"
+                            BorderThickness="1.5" CornerRadius="6" Padding="8,2">
+                      <Border.Effect>
+                        <DropShadowEffect Color="{StaticResource AmberColor}" BlurRadius="8" ShadowDepth="0" Opacity="0.5"/>
+                      </Border.Effect>
+                      <!-- Segoe MDL2 ChevronRight (PUA glyph) -->
+                      <TextBlock FontFamily="{StaticResource Glyphs}" FontSize="12"
+                                 Foreground="{StaticResource Amber}" Text="&#xE76C;"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Frame" Property="Background" Value="#FF241A08"/>
+                      </Trigger>
+                      <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="Frame" Property="Background" Value="#FF382A0C"/>
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Button.Template>
+              </Button>
+            </Grid>
             <TextBlock Text="{Binding AboutText}" Style="{StaticResource DimText}" Margin="0,8,0,0"
                        MaxHeight="150" TextTrimming="WordEllipsis" LineHeight="19" FontSize="12"/>
 
