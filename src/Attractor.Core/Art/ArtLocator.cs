@@ -20,11 +20,18 @@ public sealed class ArtLocator
     private static string[] Resolve(string mameDir, IEnumerable<string> dirs) =>
         dirs.Select(d => Path.IsPathRooted(d) ? d : Path.Combine(mameDir, d)).ToArray();
 
-    public string? FindMarquee(string game) => Find(_marqueeDirs, game);
+    /// <summary>Find a game's marquee, falling back to its <paramref name="parent"/> (cloneof)
+    /// when the clone/bootleg has none of its own.</summary>
+    public string? FindMarquee(string game, string? parent = null) => Find(_marqueeDirs, game, parent);
 
-    public string? FindSnap(string game) => Find(_snapDirs, game);
+    /// <summary>Find a game's snap, falling back to its <paramref name="parent"/> (cloneof)
+    /// when the clone has none of its own (a clone runs the same screen as its parent).</summary>
+    public string? FindSnap(string game, string? parent = null) => Find(_snapDirs, game, parent);
 
-    private static string? Find(string[] dirs, string game)
+    private static string? Find(string[] dirs, string game, string? parent) =>
+        FindOne(dirs, game) ?? (parent is { } p ? FindOne(dirs, p) : null);
+
+    private static string? FindOne(string[] dirs, string game)
     {
         foreach (var dir in dirs)
             foreach (var ext in Extensions)

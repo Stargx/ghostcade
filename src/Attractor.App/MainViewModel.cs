@@ -735,13 +735,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task LoadArtAsync(string game)
     {
+        // A clone/bootleg with no art of its own falls back to its parent's (cloneof) marquee/snap.
+        // Resolve the parent here on the UI thread (catalog dict read), then capture it into the task.
+        var parent = _db?.Find(game)?.CloneOf;
         // Probe AND load off the UI thread: the art dirs may sit on a network share,
         // where even File.Exists can stall for seconds when the share is flaky.
         var (marquee, snap) = await Task.Run(() =>
         {
             var art = _art!;
-            return (ImageLoader.LoadFrozen(art.FindMarquee(game)),
-                    ImageLoader.LoadFrozen(art.FindSnap(game)));
+            return (ImageLoader.LoadFrozen(art.FindMarquee(game, parent)),
+                    ImageLoader.LoadFrozen(art.FindSnap(game, parent)));
         });
         if (_engine?.CurrentGame == game) // a skip may have raced us
         {
