@@ -49,12 +49,19 @@
   </PropertyGroup>
 
   <Target Name="AuthenticodeSign" AfterTargets="Build" Condition="'$(SignBuild)' == 'true'">
-    <!-- Our own outputs; third-party DLLs (CommunityToolkit.Mvvm) are already signed. -->
+    <!-- Our own outputs; third-party DLLs (CommunityToolkit.Mvvm) are already signed.
+         Referenced projects are derived from @(ProjectReference) rather than named
+         literally, and nothing here is guarded by Exists(): a literal behind an
+         Exists() guard silently ships an UNSIGNED DLL if a project is ever renamed,
+         which is the exact failure signing exists to prevent. Missing = hard error. -->
     <ItemGroup>
-      <_FilesToSign Include="$(TargetDir)$(AssemblyName).exe" Condition="Exists('$(TargetDir)$(AssemblyName).exe')" />
-      <_FilesToSign Include="$(TargetDir)$(AssemblyName).dll" Condition="Exists('$(TargetDir)$(AssemblyName).dll')" />
-      <_FilesToSign Include="$(TargetDir)Attractor.Core.dll" Condition="Exists('$(TargetDir)Attractor.Core.dll')" />
+      <_FilesToSign Include="$(TargetDir)$(AssemblyName).exe" />
+      <_FilesToSign Include="$(TargetDir)$(AssemblyName).dll" />
+      <_FilesToSign Include="@(ProjectReference->'$(TargetDir)%(Filename).dll')" />
     </ItemGroup>
+
+    <Error Condition="!Exists('%(_FilesToSign.FullPath)')"
+           Text="Cannot sign: expected build output '%(_FilesToSign.FullPath)' does not exist. If a project was renamed, check &lt;AssemblyName&gt; and the ProjectReference list." />
 
     <!-- Find signtool: explicit -p:SignToolPath wins, else newest Windows SDK x64 copy,
          else just "signtool.exe" from PATH. -->
