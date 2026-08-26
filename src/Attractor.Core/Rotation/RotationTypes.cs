@@ -35,7 +35,9 @@ public sealed record MameWindowReady(string Game, int Pid, IntPtr Hwnd, PixelSiz
 /// <summary>A hands-on play session started (<paramref name="Active"/> true) or ended
 /// (false). Play windows are NOT embedded — no <see cref="MameWindowReady"/> fires for
 /// them; the host just parks its UI (and can point per-app audio at <paramref name="Pid"/>)
-/// until the session ends and the attract rotation restarts the game.</summary>
+/// until the session ends and the attract rotation restarts the game. The host locates the
+/// window itself (by <paramref name="Pid"/>) to move/size it over its game region — never
+/// embedding it, so it stays a normal, user-driven top-level window.</summary>
 public sealed record PlaySession(string Game, bool Active, int Pid);
 
 public sealed record GameFault(string Game, GameFaultKind Kind, FaultVerdict Verdict, int? ExitCode);

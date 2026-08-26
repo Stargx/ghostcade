@@ -42,6 +42,17 @@ public static class MameWindowLocator
     public static void RevealNoActivate(IntPtr hwnd) =>
         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOWNA);
 
+    /// <summary>Move + resize a NORMAL top-level window to a physical-pixel rect without
+    /// restyling, re-owning or activating it. Used to drop the un-embedded play window over
+    /// the app's game region — it stays a normal, focusable, movable window the user drives.</summary>
+    public static void MoveResizeNoActivate(IntPtr hwnd, PixelRect rect)
+    {
+        if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd) || rect.Width <= 0 || rect.Height <= 0)
+            return;
+        NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, rect.X, rect.Y, rect.Width, rect.Height,
+            NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+    }
+
     /// <summary>Polls until the game window exists, the process dies, or the timeout passes.</summary>
     public static async Task<IntPtr> FindGameWindowAsync(
         int pid, TimeSpan timeout, Func<bool> processHasExited, CancellationToken ct = default)

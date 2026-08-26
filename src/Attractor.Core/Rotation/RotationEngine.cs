@@ -456,6 +456,9 @@ public sealed class RotationEngine : IAsyncDisposable
             return false;
         }
         var proc = _proc;
+        // Signal "playing" immediately so the host's UI transitions now. The host positions the
+        // play window itself (off its critical path) — locating it here would gate this event on
+        // the window appearing (up to WindowTimeoutSeconds), delaying the whole PLAYING UI.
         PlaySessionChanged?.Invoke(new PlaySession(game, Active: true, proc.Pid));
         try
         {

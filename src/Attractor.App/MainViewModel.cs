@@ -814,12 +814,38 @@ public sealed partial class MainViewModel : ObservableObject
             return; // the engine restarts the game; OnGameChanged/OnWindowReady redress the UI
 
         _currentPid = p.Pid;
+        // Drop the play window over the cabinet's game region (MAME opens it 1x in a corner).
+        // Fire-and-forget so the PLAYING UI below isn't gated on the window appearing.
+        _ = PositionPlayWindowAsync(p.Pid);
         StageMessage = "PLAYING\n\nquit MAME when you're done —\nthe rotation picks up where it left off";
         StatusMessage = $"Playing \"{_db?.Find(p.Game)?.Title ?? p.Game}\"";
         UpdateCountdown();
         // The user asked to play, so sound follows — even if the attract loop was
         // muted. Volume still honors the slider; Mute reasserts on the next chunk.
         _ = ApplyAudioWithRetryAsync(p.Pid, forceUnmuted: true);
+    }
+
+    /// <summary>Drop the play window over the cabinet's game region — MAME opens it 1x in a
+    /// corner. Best-effort and off the critical path: locate the window (it was just running as
+    /// an attract chunk, so it appears quickly), let MAME finish sizing, then move+size it once.
+    /// It stays a normal, user-driven window (NOT embedded). Bails if the session ended, the pid
+    /// changed, or the host isn't ready before it can position.</summary>
+    private async Task PositionPlayWindowAsync(int pid)
+    {
+        try
+        {
+            var hwnd = await MameWindowLocator.FindGameWindowAsync(
+                pid, TimeSpan.FromSeconds(15), () => !IsPlaying, _cts.Token);
+            if (hwnd == IntPtr.Zero || !IsPlaying || _currentPid != pid)
+                return;
+            await Task.Delay(500, _cts.Token); // let MAME finish sizing so it can't override our move
+            if (!IsPlaying || _currentPid != pid || _hostRect is not { } hostRect)
+                return;
+            var rect = hostRect();
+            if (rect.Width > 0 && rect.Height > 0)
+                MameWindowLocator.MoveResizeNoActivate(hwnd, rect);
+        }
+        catch (OperationCanceledException) { /* shutting down */ }
     }
 
     private void OnHoldChanged(bool held)
