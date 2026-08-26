@@ -1,20 +1,33 @@
-# Attractor
+# Ghostcade
 
-**Ambient arcade player.** Attractor cycles your MAME collection through each
-game's own *attract mode* — the demo loop a cabinet plays when nobody's
-playing — one game every few minutes, embedded in a neon cabinet on your
-desktop, while you work.
+*Discover the games in your MAME collection — by letting them play themselves.*
 
-It is **not** a front-end or a launcher. You don't pick games and you don't
-play them — Attractor just *runs* them in attract mode and rotates, like having
-a wall of arcade cabinets idling in the corner of the room.
+**You have thousands of ROMs. You've played maybe fifty of them.**
 
-![Attractor — full layout](docs/screenshots/full.png)
+Ghostcade works through the rest. It picks a game, launches it in your MAME,
+and lets the machine run its own *attract mode* — the demo loop a real cabinet
+plays when nobody's at the controls — for a few minutes, then moves on to the
+next one. Not screenshots and not videos: the actual game, actually running,
+showing you what it is.
+
+**Discovery is the point.** A big ROM set isn't a library you work through,
+it's a haystack — and the good stuff in there is mostly things you'd never
+think to go looking for by name. Ghostcade puts it in front of you a few
+minutes at a time, in the background, while you get on with something else.
+When one catches your eye, a single press of **Play this game**
+(`Ctrl+Alt+P`) hands it over for real.
+
+And it looks the part while it does it: the live MAME window sits inside a
+neon cabinet, the game's marquee glowing above it and its history, trivia and
+scoring tips scrolling down the side — an '80s arcade idling in the corner of
+your desk.
+
+![Ghostcade — full layout](docs/screenshots/full.png)
 
 On shorter screens it switches to a slim layout that drops the side panel and
 scales the chrome down:
 
-![Attractor — slim layout](docs/screenshots/slim.png)
+![Ghostcade — slim layout](docs/screenshots/slim.png)
 
 ---
 
@@ -41,7 +54,7 @@ scales the chrome down:
 ## What it is *not*
 
 - Not a front-end / game launcher (it doesn't replace LaunchBox, Attract-Mode,
-  etc. — it's the opposite idea: watch, don't play).
+  etc. — you're not meant to be picking from a list; that's the whole idea).
 - Not an emulator. It drives **your** MAME.
 - It ships **no ROMs, no MAME, and no game artwork**, and never downloads any.
 
@@ -55,14 +68,14 @@ scales the chrome down:
 
 ## Install
 
-**Installer** (recommended): download `Attractor-x.y.z-Setup.exe` from the
-[latest release](https://github.com/Stargx/attractor/releases), run it (it's a
+**Installer** (recommended): download `Ghostcade-x.y.z-Setup.exe` from the
+[latest release](https://github.com/Stargx/ghostcade/releases), run it (it's a
 per-user install, no admin needed), and it'll set up the runtime if required.
 
-**Portable**: download `Attractor-x.y.z-portable.zip`, unzip anywhere writable,
-run `Attractor.exe`. Self-contained — no runtime install needed.
+**Portable**: download `Ghostcade-x.y.z-portable.zip`, unzip anywhere writable,
+run `Ghostcade.exe`. Self-contained — no runtime install needed.
 
-> Attractor 0.2.0 is an early public release. Builds aren't code-signed yet, so
+> Ghostcade 0.2.0 is an early public release. Builds aren't code-signed yet, so
 > Windows SmartScreen will warn "unknown publisher" the first time ("More info →
 > Run anyway"). The signing pipeline is already in place (see
 > [docs/signing.md](docs/signing.md)) — it just needs a certificate.
@@ -109,13 +122,13 @@ independent of Windows). The menu bar adds:
   restarts). The genre list appears when a `catver.ini` sits next to `mame.exe`
   (or in its `folders\` subfolder, or wherever `mame.catverPath` in
   `config.json` points) — it's the fan-maintained category file from
-  [progettosnaps.net](https://www.progettosnaps.net/catver/); Attractor doesn't
+  [progettosnaps.net](https://www.progettosnaps.net/catver/); Ghostcade doesn't
   ship it. While a genre is ticked, games catver.ini doesn't list sit the
   rotation out.
 - **File → Time out** — how long each game demos before moving on (1–15 min), live.
 - **Help → About** — version and credits.
 
-Attractor also plays its own cabinet sound effects — a startup jingle, a coin when
+Ghostcade also plays its own cabinet sound effects — a startup jingle, a coin when
 it changes game, a click on the buttons — separate from the Sound On/Off button
 (which only silences MAME). Turn them off or change their volume in the `sound`
 section of `config.json`.
@@ -139,7 +152,7 @@ slider — changes there are saved back to `config.json`.
 
 **Why does the game briefly restart every few minutes?**
 MAME only suppresses its "this game has problems" warning screens when a session
-runs under 300 seconds, so Attractor runs each game in chunks under that. With the
+runs under 300 seconds, so Ghostcade runs each game in chunks under that. With the
 default ~5-minute dwell (change it to 1–15 min under **File → Time out**), a longer
 dwell relaunches the same game between chunks — a brief blink. It's the price of a
 clean, warning-free picture.
@@ -158,7 +171,7 @@ tall it uses the slim layout on purpose.
 
 **Can I actually play what's on screen?**
 Yes — that's the one exception to "watch, don't play". Hit **Play this game**
-(`Ctrl+Alt+P`) and Attractor swaps the attract demo for a real, focused MAME
+(`Ctrl+Alt+P`) and Ghostcade swaps the attract demo for a real, focused MAME
 session: insert coins, play as long as you like (no 5-minute chunking — you're
 there to dismiss any warnings yourself). Quit MAME (Esc by default) and the
 rotation resumes automatically.
@@ -171,25 +184,30 @@ launches focused, because you asked to play.)
 ## Build from source
 
 ```
-git clone https://github.com/Stargx/attractor
-cd attractor
+git clone https://github.com/Stargx/ghostcade
+cd ghostcade
 dotnet build Attractor.slnx -c Release
 dotnet test Attractor.slnx -c Release
 ```
 
 Solution layout: `Attractor.Core` (engine + MAME interaction, no UI),
 `Attractor.App` (WPF), `Attractor.Core.Tests` (xunit), `Attractor.Smoke`
-(headless harness). The original PowerShell prototype is preserved under
-`prototype/`.
+(headless harness). *Ghostcade was called Attractor before its first public
+release; the namespaces and project names kept the old name as an internal
+codename rather than churn every file for a rename nobody sees.* The original
+PowerShell prototype is preserved under `prototype/`.
 
 ## Credits & licence
 
-Attractor is MIT licensed (see [LICENSE](LICENSE)). Bundled fonts —
+Ghostcade is written by **Steve Hunt** ([Cold Beam Games](https://coldbeamgames.com))
+and is MIT licensed (see [LICENSE](LICENSE)). Bundled fonts —
 [Press Start 2P](https://github.com/google/fonts/tree/main/ofl/pressstart2p)
 and [DSEG](https://github.com/keshikan/DSEG) — are under the SIL Open Font
 License (see `src/Attractor.App/assets/fonts`). The bundled UI sound effects
 (`src/Attractor.App/assets/audio`) are original / royalty-free and free to
 redistribute.
 
-MAME is a trademark of its respective owners. Attractor is not affiliated with
-or endorsed by the MAME team, and includes no MAME code, ROMs, or game artwork.
+MAME® is a registered trademark of Gregory Ember. Ghostcade is an independent
+companion utility that drives your own copy of MAME — it is not affiliated with,
+endorsed by, or derived from the MAME project, and includes no MAME code, ROMs, or
+game artwork.

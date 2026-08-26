@@ -6,7 +6,7 @@ namespace Attractor.Core.Catalog;
 /// INI whose <c>[Category]</c> section holds <c>shortname=Genre / Subgenre</c>
 /// lines (sometimes suffixed <c>* Mature *</c>). Every '/'-separated segment is kept
 /// as an independent, filterable tag (so <c>Fighter / 2.5D</c> yields both "Fighter"
-/// and "2.5D") — the game then matches on any of them. Attractor never ships this
+/// and "2.5D") — the game then matches on any of them. Ghostcade never ships this
 /// file; the user supplies it and everything here degrades to "no genre data"
 /// without it.
 /// </summary>

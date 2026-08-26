@@ -1,7 +1,7 @@
 <Window x:Class="Attractor.App.SetupWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Attractor — setup" Height="560" Width="760" ResizeMode="NoResize"
+        Title="Ghostcade — setup" Height="560" Width="760" ResizeMode="NoResize"
         Background="{StaticResource BgDeep}" WindowStartupLocation="CenterScreen">
 
   <Border Style="{StaticResource NeonFrame}" Margin="18" Padding="30">
@@ -11,7 +11,7 @@
       <StackPanel x:Name="Page1">
         <TextBlock Text="STEP 1 · FIND YOUR MAME" Style="{StaticResource PixelLabel}" FontSize="15"/>
         <TextBlock Style="{StaticResource DimText}" Margin="0,16,0,0" FontSize="14">
-          Attractor drives your own MAME — any version from 0.147 to current.
+          Ghostcade drives your own MAME — any version from 0.147 to current.
           Point it at mame.exe; ROMs come from MAME's own configuration.
         </TextBlock>
         <DockPanel Margin="0,26,0,0">
@@ -30,7 +30,7 @@
         <TextBlock Text="STEP 2 · ARTWORK (OPTIONAL)" Style="{StaticResource PixelLabel}" FontSize="15"/>
         <TextBlock Style="{StaticResource DimText}" Margin="0,16,0,0" FontSize="14">
           Marquee art tops the cabinet; snapshots cover the brief blink between
-          games. Without them Attractor still works — you just get text instead.
+          games. Without them Ghostcade still works — you just get text instead.
         </TextBlock>
 
         <TextBlock Text="marquees folder" Style="{StaticResource DimText}" Margin="0,22,0,6" FontSize="12"/>
@@ -56,7 +56,7 @@
       <StackPanel x:Name="Page3" Visibility="Collapsed">
         <TextBlock Text="STEP 3 · SCAN YOUR COLLECTION" Style="{StaticResource PixelLabel}" FontSize="15"/>
         <TextBlock Style="{StaticResource DimText}" Margin="0,16,0,0" FontSize="14">
-          One-time pass: Attractor reads MAME's machine list and verifies which
+          One-time pass: Ghostcade reads MAME's machine list and verifies which
           ROM sets you actually have. Over a network share this can take several
           minutes — results are cached, every later start is instant.
         </TextBlock>

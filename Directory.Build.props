@@ -8,7 +8,7 @@
     <Deterministic>true</Deterministic>
     <Version>0.2.0</Version>
     <Authors>Cold Beam Games</Authors>
-    <Product>Attractor</Product>
+    <Product>Ghostcade</Product>
     <Description>Ambient arcade player — cycles your MAME collection through attract mode while you work.</Description>
     <Copyright>Copyright © 2026 Cold Beam Games</Copyright>
   </PropertyGroup>

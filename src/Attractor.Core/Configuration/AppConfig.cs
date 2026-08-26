@@ -40,7 +40,7 @@ public sealed record AppConfig
         public int? DetectedVersionMinor { get; init; } = null;
         /// <summary>
         /// Path to a catver.ini for the genre filter (the fan-maintained category
-        /// file — Attractor doesn't ship it). Relative paths resolve against the
+        /// file — Ghostcade doesn't ship it). Relative paths resolve against the
         /// MAME directory. Null/empty = look next to mame.exe, then in its
         /// "folders" subfolder; genre filtering simply stays hidden without one.
         /// </summary>

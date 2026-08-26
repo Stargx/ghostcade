@@ -26,7 +26,7 @@ Launch uses raw `CreateProcessW` because `ProcessStartInfo` cannot express:
   first instruction; `CREATE_NO_WINDOW` stops console-subsystem MAME builds
   (0.147) popping a console from a GUI host.
 
-## Spike results (2026-06-11, automated: `Attractor.exe --spike <mame> <game|-> <log>`)
+## Spike results (2026-06-11, automated: `Ghostcade.exe --spike <mame> <game|-> <log>`)
 
 | Check | MAME 0.147 (galaga, SMB share) | MAME 0.288 (system UI, local) |
 |---|---|---|

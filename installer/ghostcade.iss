@@ -1,15 +1,15 @@
-; Inno Setup script for Attractor.
-; Per-user install (no admin) into %LocalAppData%\Programs\Attractor so the
+; Inno Setup script for Ghostcade.
+; Per-user install (no admin) into %LocalAppData%\Programs\Ghostcade so the
 ; app's portable data\ folder beside the exe stays writable. Framework-dependent
 ; build; the .NET 10 Desktop Runtime is detected and offered for download if missing.
 
-#define AppName "Attractor"
+#define AppName "Ghostcade"
 #ifndef AppVersion
   #define AppVersion "0.2.0"
 #endif
 #define AppPublisher "Cold Beam Games"
-#define AppExe "Attractor.exe"
-#define AppUrl "https://github.com/Stargx/attractor"
+#define AppExe "Ghostcade.exe"
+#define AppUrl "https://github.com/Stargx/ghostcade"
 ; -DPublishDir=... is passed by CI; falls back to the local publish path.
 #ifndef PublishDir
   #define PublishDir "..\src\Attractor.App\bin\Release\net10.0-windows\publish"
@@ -29,11 +29,21 @@ DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#AppExe}
 SetupIconFile=..\src\Attractor.App\assets\img\icon.ico
 OutputDir=Output
-OutputBaseFilename=Attractor-{#AppVersion}-Setup
+OutputBaseFilename=Ghostcade-{#AppVersion}-Setup
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+
+[InstallDelete]
+; Pre-rename artefacts. The AppId is deliberately unchanged so an existing install
+; upgrades in place, but [Files] copies with ignoreversion rather than replacing the
+; directory — without this the old Attractor.exe survives beside the new binary and
+; the old shortcuts keep pointing at it.
+Type: files; Name: "{app}\Attractor.exe"
+Type: files; Name: "{app}\Attractor.dll"
+Type: files; Name: "{userdesktop}\Attractor.lnk"
+Type: files; Name: "{group}\Attractor.lnk"
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
@@ -84,7 +94,7 @@ begin
   except
     MsgBox('Could not download the .NET 10 Desktop Runtime automatically.' + #13#10 +
            'Please install it from https://dotnet.microsoft.com/download/dotnet/10.0 ' +
-           'and run Attractor afterwards.', mbInformation, MB_OK);
+           'and run Ghostcade afterwards.', mbInformation, MB_OK);
     Exit;
   end;
   Exec(ExpandConstant('{tmp}\windowsdesktop-runtime.exe'), '/install /quiet /norestart',
@@ -96,7 +106,7 @@ begin
   Result := '';
   if not HasDotNet10Desktop() then
   begin
-    if MsgBox('Attractor needs the .NET 10 Desktop Runtime, which was not found.' + #13#10 +
+    if MsgBox('Ghostcade needs the .NET 10 Desktop Runtime, which was not found.' + #13#10 +
               'Download and install it now?', mbConfirmation, MB_YESNO) = IDYES then
       InstallDotNet();
   end;

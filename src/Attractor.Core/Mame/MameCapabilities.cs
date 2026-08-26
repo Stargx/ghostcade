@@ -17,7 +17,7 @@ public enum MameTimingMode
 }
 
 /// <summary>
-/// What Attractor needs to know about a specific MAME build to drive it: its
+/// What Ghostcade needs to know about a specific MAME build to drive it: its
 /// version and which launch dialect it speaks. Detected once from the
 /// <c>-help</c> banner at setup and persisted into config, so normal launches
 /// never re-probe. All version-conditional behaviour lives here — there are no

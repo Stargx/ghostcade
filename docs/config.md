@@ -1,12 +1,12 @@
 # config.json reference
 
-Attractor stores its settings in `data\config.json`, in a portable `data\`
-folder next to `Attractor.exe`. (If the install location is read-only, it falls
+Ghostcade stores its settings in `data\config.json`, in a portable `data\`
+folder next to `Ghostcade.exe`. (If the install location is read-only, it falls
 back to `%AppData%\Attractor`.) Open it via **File → Open config folder**.
 
 The file is written on first run and tolerates `// comments` and trailing
 commas. Missing keys are filled with defaults; a file from a *newer* version of
-Attractor is refused rather than overwritten.
+Ghostcade is refused rather than overwritten.
 
 ```jsonc
 {
@@ -33,7 +33,7 @@ Attractor is refused rather than overwritten.
     // MAME minor version the wizard detected (e.g. 288), for diagnostics only.
     "detectedVersionMinor": null,
     // Path to a catver.ini for the genre filter (the fan-maintained category file
-    // from progettosnaps.net — not shipped with Attractor). Relative paths resolve
+    // from progettosnaps.net — not shipped with Ghostcade). Relative paths resolve
     // against the MAME folder. null = look for catver.ini next to mame.exe, then
     // in its folders\ subfolder. Without one, the Genre menu shows a disabled explainer.
     "catverPath": null
@@ -109,7 +109,7 @@ Attractor is refused rather than overwritten.
 Modifiers: `Ctrl`, `Alt`, `Shift`, `Win`. The key is any single key name
 (letters, digits, `Left`/`Right`/`Up`/`Down`, `F1`–`F12`, etc.). `OemPlus` and
 `OemMinus` are the `=`/`+` and `-`/`_` keys — the defaults for Volume Up/Down. If a
-chord is already taken by another app, Attractor notes it in the status line and
+chord is already taken by another app, Ghostcade notes it in the status line and
 carries on without that one.
 
 The Volume Up/Down hotkeys adjust `mame.volume` (above) in 10% steps — MAME's own

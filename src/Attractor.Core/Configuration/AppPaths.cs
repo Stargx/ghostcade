@@ -1,7 +1,7 @@
 namespace Attractor.Core.Configuration;
 
 /// <summary>
-/// Where Attractor keeps its config, caches, tags and logs.
+/// Where Ghostcade keeps its config, caches, tags and logs.
 ///
 /// By preference everything lives in a <c>data\</c> folder right next to the
 /// executable — portable, and no hunting through %APPDATA%. If that location

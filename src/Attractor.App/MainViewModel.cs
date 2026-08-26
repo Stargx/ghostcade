@@ -55,7 +55,7 @@ public sealed partial class MainViewModel : ObservableObject
     // can't bleed past the sides of games that run smaller than their snap.
     private const double MaskClearDelaySeconds = 2;
 
-    [ObservableProperty] private string _title = "Attractor";
+    [ObservableProperty] private string _title = "Ghostcade";
     [ObservableProperty] private string _year = "";
     [ObservableProperty] private string _manufacturer = "";
     [ObservableProperty] private string _verifyBadge = "";
@@ -174,7 +174,7 @@ public sealed partial class MainViewModel : ObservableObject
                 if (!caps.Supported)
                 {
                     _log.Error($"unsupported MAME version {caps.VersionLabel}");
-                    StageMessage = $"MAME {caps.VersionLabel} isn't supported — Attractor needs 0.147 or newer.";
+                    StageMessage = $"MAME {caps.VersionLabel} isn't supported — Ghostcade needs 0.147 or newer.";
                     return;
                 }
                 timingMode = caps.TimingMode;
@@ -500,7 +500,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Attach catver.ini genres to the fresh catalog so the genre facet of
-    /// File → Filter lights up. Best-effort and quiet: no catver.ini (Attractor never
+    /// File → Filter lights up. Best-effort and quiet: no catver.ini (Ghostcade never
     /// ships one), or an unreadable one, just leaves the genre submenu as a disabled
     /// explainer. Runs inside the catalog build Task.Run, before the startup filter is
     /// applied — a saved genre filter must be validated against real genre data.</summary>
@@ -831,7 +831,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (s == RotationState.Faulted)
         {
-            StageMessage = "ROTATION STOPPED\n\nMAME unreachable — moved exe? share offline?\nfix and restart Attractor";
+            StageMessage = "ROTATION STOPPED\n\nMAME unreachable — moved exe? share offline?\nfix and restart Ghostcade";
             CountdownLabel = "STOPPED";
             CountdownValue = "--:--";
         }

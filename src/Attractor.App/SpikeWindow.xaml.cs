@@ -11,7 +11,7 @@ namespace Attractor.App;
 
 /// <summary>
 /// Embedding spike window (kept for regression). Manual mode: launch any game from any MAME and watch it
-/// embed. Automated mode: `Attractor.exe --spike <mame.exe> <game|-> <log>`
+/// embed. Automated mode: `Ghostcade.exe --spike <mame.exe> <game|-> <log>`
 /// runs the embed checklist and writes machine-readable results to the log.
 /// Replaced by the real layout in M3.
 /// </summary>

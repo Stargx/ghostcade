@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What Attractor is
+## What Ghostcade is
 
-Attractor is an **ambient arcade player**: it cycles a user's *existing* MAME
+Ghostcade is an **ambient arcade player**: it cycles a user's *existing* MAME
 collection through each game's built-in **attract/demo loop** (no coins, no
 play), one game every few minutes, embedded inside a WPF "neon cabinet" on the
 desktop while they work. It is deliberately **not** a front-end or launcher —
@@ -57,7 +57,7 @@ file_scoped:warning`), 4-space indent, CRLF, `system`-directives-first.
 - **`src/Attractor.Core`** — all engine + MAME interaction logic. **No UI, no
   WPF dependency.** This is where most work happens and where all the tests point.
 - **`src/Attractor.App`** — the WPF presentation layer (CommunityToolkit.Mvvm).
-  Composes Core services at startup; output assembly is `Attractor.exe`.
+  Composes Core services at startup; output assembly is `Ghostcade.exe`.
 - **`tests/Attractor.Core.Tests`** — xUnit. Tests Core *only*, through fakes.
 - **`tools/Attractor.Smoke`** — console harness driving real Core against real MAME.
 - **`prototype/`** — the original PowerShell proof-of-concept (`attract.ps1`),
@@ -68,7 +68,7 @@ file_scoped:warning`), 4-space indent, CRLF, `system`-directives-first.
 MAME auto-suppresses its startup/disclaimer screens — **including the blocking
 "this game has problems, press a key" warning** — only while a session runs under
 **300 emulated seconds**. With nobody at the keyboard, a longer run would freeze on
-that warning forever. So Attractor never runs a game in one long session: a dwell
+that warning forever. So Ghostcade never runs a game in one long session: a dwell
 is split into **≤299s chunks** (`ChunkPlanner`, `MaxChunkSeconds = 299`), and each
 chunk is a **fresh MAME launch of the same game**. This is the ~5-minute "blink"
 the README's FAQ describes, and it ripples through `ChunkPlanner`,
@@ -138,6 +138,16 @@ bag, so a multi-hour cycle resumes across restarts), `banned.txt`,
 `favorites.txt`, `placement.json`, `logs\attractor-YYYYMMDD.log`. Full schema in
 `docs/config.md`. **Every** write that a reader/crash could interleave with goes
 through `Configuration/AtomicFile` (write `.tmp`, then atomic `File.Move` rename).
+
+**Retained "Attractor" identity strings (deliberate, do not "fix").** The product
+was renamed to Ghostcade before first public release, but four strings kept the old
+name on purpose because changing them breaks continuity for no user-visible gain:
+the single-instance mutex `Local\Attractor.SingleInstance`, the log filename prefix
+`attractor-YYYYMMDD.log` *and its prune glob* (change both or neither), the legacy
+`%APPDATA%\Attractor` migration root in `AppPaths`, and the Inno `AppId` GUID (which
+is what makes a renamed build an in-place upgrade rather than a second install). The
+C# namespaces and project names (`Attractor.Core`, `Attractor.App`, `Attractor.slnx`)
+are likewise an internal codename — user-invisible, so not worth ~150 edits.
 
 ## Subsystem notes — the non-obvious invariants
 

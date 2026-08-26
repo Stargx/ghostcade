@@ -172,7 +172,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Re-run the setup wizard against the current config so the user can repoint
-    /// Attractor at a different MAME / ROM folder (each with its own version) and
+    /// Ghostcade at a different MAME / ROM folder (each with its own version) and
     /// rescan — no hand-editing of config.json. Shown modally so the live rotation
     /// behind it can't be poked (e.g. a second Rescan racing the wizard's own
     /// scan) while we reconfigure. The wizard saves the new config and reports
@@ -222,7 +222,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this,
                 $"Couldn't start the new configuration:\n\n{ex.Message}\n\n" +
                 "Re-opening setup so you can correct it.",
-                "Attractor", MessageBoxButton.OK, MessageBoxImage.Error);
+                "Ghostcade", MessageBoxButton.OK, MessageBoxImage.Error);
             // Keep the app alive with a usable window: the wizard (first-run mode)
             // opens a fresh main window once setup finishes.
             new SetupWindow(_paths, _vm.Config).Show();

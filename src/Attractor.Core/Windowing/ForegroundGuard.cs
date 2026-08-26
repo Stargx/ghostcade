@@ -10,7 +10,7 @@ namespace Attractor.Core.Windowing;
 /// slow network ROM finally finishes loading, which WS_EX_NOACTIVATE does not stop. It
 /// installs a global EVENT_SYSTEM_FOREGROUND WinEvent hook: whenever a MAME window grabs the
 /// foreground while armed, it shoves focus straight back to the last real external window the
-/// user was in (their editor, a browser, …) — never to Attractor itself, never to MAME.
+/// user was in (their editor, a browser, …) — never to Ghostcade itself, never to MAME.
 ///
 /// Threading: <see cref="Install"/>/<see cref="Dispose"/> and every callback run on the
 /// thread that installed the hook, which MUST be a message-pumped thread (the WPF UI thread —
@@ -44,7 +44,7 @@ public sealed class ForegroundGuard : IDisposable
             IntPtr.Zero, _proc, idProcess: 0, idThread: 0,
             NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
         // Seed from whatever is foreground now, but never our own window — at install time
-        // that is usually Attractor itself, and seeding it would make the first residual bounce
+        // that is usually Ghostcade itself, and seeding it would make the first residual bounce
         // pull focus TO us, the exact anti-goal. If it's us (or MAME), leave the target empty
         // and wait for the first real external foreground event.
         var fg = NativeMethods.GetForegroundWindow();

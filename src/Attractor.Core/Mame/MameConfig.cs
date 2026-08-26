@@ -1,7 +1,7 @@
 namespace Attractor.Core.Mame;
 
 /// <summary>
-/// Discovers where MAME keeps its ROMs. Attractor otherwise leaves ROM location
+/// Discovers where MAME keeps its ROMs. Ghostcade otherwise leaves ROM location
 /// entirely to MAME, but the favorites list records each game's folder so it can
 /// be played later, which needs the effective rompath: an explicit -rompath in the
 /// launch args wins, else MAME's own configuration via -showconfig, else "roms".

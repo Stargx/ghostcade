@@ -1,7 +1,7 @@
 <Window x:Class="Attractor.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Attractor" Height="1240" Width="1373" MinHeight="640" MinWidth="1373" MaxWidth="1373"
+        Title="Ghostcade" Height="1240" Width="1373" MinHeight="640" MinWidth="1373" MaxWidth="1373"
         Background="#FF050507" WindowStartupLocation="CenterScreen">
 
   <!-- Chrome is Steve's artwork (1341px-wide design). Two layout modes, chosen
@@ -33,7 +33,7 @@
         <MenuItem Header="1_5 minutes" IsCheckable="True" Tag="900" Click="TimeoutItem_Click"/>
       </MenuItem>
       <MenuItem Header="_Help">
-        <MenuItem Header="_About Attractor" Click="AboutMenu_Click"/>
+        <MenuItem Header="_About Ghostcade" Click="AboutMenu_Click"/>
       </MenuItem>
     </Menu>
 

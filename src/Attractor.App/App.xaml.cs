@@ -25,7 +25,7 @@ public partial class App : Application
         StartupArgs = e.Args;
         base.OnStartup(e);
 
-        // regression harness: Attractor.exe --spike <mame.exe> <game|-> <log>
+        // regression harness: Ghostcade.exe --spike <mame.exe> <game|-> <log>
         if (e.Args.Length > 0 && e.Args[0] == "--spike")
         {
             new SpikeWindow().Show();
@@ -36,7 +36,11 @@ public partial class App : Application
         _singleInstance = new Mutex(initiallyOwned: true, @"Local\Attractor.SingleInstance", out bool first);
         if (!first)
         {
-            var other = System.Diagnostics.Process.GetProcessesByName("Attractor")
+            // Derived, never hardcoded: this must track <AssemblyName>, and a literal
+            // would drift silently on a rename — the app would still exit, but never
+            // foreground the instance already running.
+            using var self = System.Diagnostics.Process.GetCurrentProcess();
+            var other = System.Diagnostics.Process.GetProcessesByName(self.ProcessName)
                 .FirstOrDefault(p => p.Id != Environment.ProcessId && p.MainWindowHandle != IntPtr.Zero);
             if (other is not null)
                 SetForegroundWindow(other.MainWindowHandle);
@@ -47,7 +51,7 @@ public partial class App : Application
         var paths = new AppPaths();
         Log = new FileLog(paths.LogsDir);
         InstallGlobalExceptionHandlers();
-        Log.Info($"Attractor starting (data: {paths.Root})");
+        Log.Info($"Ghostcade starting (data: {paths.Root})");
 
         AppConfig config;
         try
@@ -60,7 +64,7 @@ public partial class App : Application
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
         {
             Log.Error("config load failed", ex);
-            MessageBox.Show(ex.Message, "Attractor — config problem",
+            MessageBox.Show(ex.Message, "Ghostcade — config problem",
                 MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
             return;
@@ -92,7 +96,7 @@ public partial class App : Application
             MessageBox.Show(
                 $"Something went wrong:\n\n{args.Exception.Message}\n\n" +
                 "It's been logged (File → Open config folder → logs). The app will keep running.",
-                "Attractor", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "Ghostcade", MessageBoxButton.OK, MessageBoxImage.Warning);
             args.Handled = true;
         };
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -106,7 +110,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        Log.Info($"Attractor exiting (code {e.ApplicationExitCode})");
+        Log.Info($"Ghostcade exiting (code {e.ApplicationExitCode})");
         (Log as IDisposable)?.Dispose();
         base.OnExit(e);
     }

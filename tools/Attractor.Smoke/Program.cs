@@ -1,4 +1,4 @@
-// Attractor smoke harness: drives Attractor.Core against a real MAME install
+// Ghostcade smoke harness: drives Attractor.Core against a real MAME install
 // with no UI. Doubles as the reference implementation for any future host
 // (e.g. the Unreal 3D arcade).
 //

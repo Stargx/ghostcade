@@ -118,7 +118,7 @@ public partial class SetupWindow : Window
         ProbeText.Text = caps switch
         {
             null => "✗ no response — slow share, or this isn't MAME",
-            { Supported: false } => $"✗ MAME {caps.VersionLabel} is too old — Attractor needs 0.147 or newer",
+            { Supported: false } => $"✗ MAME {caps.VersionLabel} is too old — Ghostcade needs 0.147 or newer",
             _ => $"✓ MAME {caps.VersionLabel} detected",
         };
         // Block progress on an unsupported MAME so the user never reaches a
@@ -244,7 +244,7 @@ public partial class SetupWindow : Window
             else
             {
                 ScanProgressText.Text = $"✓ {db.All.Count} GAMES READY";
-                NextBtn.Content = "START ATTRACTOR ▶";
+                NextBtn.Content = "START GHOSTCADE ▶";
                 NextBtn.IsEnabled = true;
             }
         }
@@ -295,7 +295,7 @@ public partial class SetupWindow : Window
         }
         if (_page == 3)
         {
-            NextBtn.Content = _scannedDb is not null ? "START ATTRACTOR ▶" : "NEXT ▶";
+            NextBtn.Content = _scannedDb is not null ? "START GHOSTCADE ▶" : "NEXT ▶";
             NextBtn.IsEnabled = _scannedDb is { } db && db.All.Count > 0;
         }
         if (_page == 1)
