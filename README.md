@@ -55,8 +55,8 @@ run `Ghostcade.exe`. Self-contained — no runtime install needed.
 
 > Ghostcade 0.2.0 is an early public release. Builds aren't code-signed yet, so
 > Windows SmartScreen will warn "unknown publisher" the first time ("More info →
-> Run anyway"). The signing pipeline is already in place (see
-> [docs/signing.md](docs/signing.md)) — it just needs a certificate.
+> Run anyway"). The signing pipeline is already in place — it just needs a
+> certificate.
 
 ## Optional
 

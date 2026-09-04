@@ -40,8 +40,9 @@
          dotnet build -c Release -p:SignBuild=true `
            -p:SigningCertPfxPath=cert.pfx -p:SigningCertPassword=$env:CERT_PWD
        Signs the artefacts we produce (apphost exe + our own managed DLLs) and
-       timestamps them so the signature outlives the certificate. Why this exists and
-       how to get a certificate: docs/signing.md. -->
+       timestamps them so the signature outlives the certificate. Unsigned .NET binaries
+       with this much Win32 interop draw antivirus ML false positives and SmartScreen
+       "unknown publisher" warnings; an Authenticode signature is the durable fix. -->
   <PropertyGroup>
     <SignBuild Condition="'$(SignBuild)' == ''">false</SignBuild>
     <!-- Set empty to skip timestamping (e.g. an offline self-signed test). -->
@@ -83,7 +84,7 @@
     </PropertyGroup>
 
     <Error Condition="'$(_CertArgs)' == ''"
-           Text="SignBuild=true but no certificate was given. Pass -p:SigningCertThumbprint=&lt;thumbprint&gt; (a code-signing cert in CurrentUser\My) or -p:SigningCertPfxPath=&lt;path&gt; -p:SigningCertPassword=&lt;pwd&gt;. See docs/signing.md." />
+           Text="SignBuild=true but no certificate was given. Pass -p:SigningCertThumbprint=&lt;thumbprint&gt; (a code-signing cert in CurrentUser\My) or -p:SigningCertPfxPath=&lt;path&gt; -p:SigningCertPassword=&lt;pwd&gt;." />
 
     <Message Importance="high" Text="Authenticode-signing with $(SignToolPath):&#xA;  @(_FilesToSign, '%0A  ')" />
     <Exec Command="&quot;$(SignToolPath)&quot; sign $(_CertArgs) /fd sha256 $(_TsaArgs) @(_FilesToSign->'&quot;%(FullPath)&quot;', ' ')" />
