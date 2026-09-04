@@ -1,25 +1,21 @@
 # Ghostcade
 
-*Discover the games in your MAME collection — by letting them play themselves.*
+*Discover the games in your MAME collection with this compact MAME attract mode cab.*
 
-**You have thousands of ROMs. You've played maybe fifty of them.**
+**Do you have many ROMs? Have you only played a few of them? What gems have you never seen?**
 
-Ghostcade works through the rest. It picks a game, launches it in your MAME,
-and lets the machine run its own *attract mode* — the demo loop a real cabinet
-plays when nobody's at the controls — for a few minutes, then moves on to the
-next one. Not screenshots and not videos: the actual game, actually running,
-showing you what it is.
+Ghostcade works through your collection. It picks a game, launches it using your MAME emulator,
+and lets the machine run its own *attract mode*. The demo runs for a few minutes, then moves on to the
+next one. The actual game, actually running, showing you what it is.
 
 **Discovery is the point.** A big ROM set isn't a library you work through,
 it's a haystack — and the good stuff in there is mostly things you'd never
 think to go looking for by name. Ghostcade puts it in front of you a few
 minutes at a time, in the background, while you get on with something else.
-When one catches your eye, a single press of **Play this game**
-(`Ctrl+Alt+P`) hands it over for real.
 
 And it looks the part while it does it: the live MAME window sits inside a
 neon cabinet, the game's marquee glowing above it and its history, trivia and
-scoring tips scrolling down the side — an '80s arcade idling in the corner of
+scoring tips scrolling down the side, an '80s arcade idling in the corner of
 your desk.
 
 ![Ghostcade — full layout](docs/screenshots/full.png)
@@ -31,32 +27,14 @@ scales the chrome down:
 
 ---
 
-## What it does
+## Features
 
-- Picks a game, launches it in MAME with no coins inserted, and lets the
-  attract/demo loop play for a few minutes, then moves on to the next.
-- **Shuffle with no repeats** until your whole collection has had a turn —
-  and it remembers where it's up to across restarts.
-- Embeds the real MAME window inside a neon arcade cabinet, with the game's
-  **marquee art** up top and (on bigger screens) a side panel showing the
-  title, year, manufacturer and the game's story — cycling through its
-  history, trivia, scoring and tips sections while the game demos.
-- **"I want a go!"** — one press of **Play this game** (`Ctrl+Alt+P`) hands you
-  the current game for real: a fresh, focused MAME session with coins allowed
-  and no time cap. Quit MAME and the rotation carries on where it left off.
-- **Filter the rotation** to just the decades, manufacturers and/or **genres**
-  you care about, or to **your favourites only** — set live from
-  **File → Filter** (the choices combine, and stick across restarts). Genres
-  come from a [catver.ini](https://www.progettosnaps.net/catver/) you supply.
-- Stays out of your way: it never steals keyboard focus, and you can mute or set the
-  volume of just the emulator without touching the rest of your system.
+- **Games Filters:** Decades, manufacturers and/or genres you care about. Show me fighting games from the 80s!
+- **Shuffle with no repeats:** Until your whole collection has had a turn and it remembers where it's up to across restarts.
+- **Cool cabinet art:** Embeds the real MAME window inside a neon arcade cabinet, with the game's marquee art up top.
+- **Game Trivia:** A side panel showing the title, year, manufacturer and the game's story.
+- **"I want a go!":** One press of 'Play this game' hands you the current game for real: a fresh, focused MAME session. Quit MAME and the rotation carries on where it left off.
 
-## What it is *not*
-
-- Not a front-end / game launcher (it doesn't replace LaunchBox, Attract-Mode,
-  etc. — you're not meant to be picking from a list; that's the whole idea).
-- Not an emulator. It drives **your** MAME.
-- It ships **no ROMs, no MAME, and no game artwork**, and never downloads any.
 
 ## Requirements
 
@@ -80,6 +58,11 @@ run `Ghostcade.exe`. Self-contained — no runtime install needed.
 > Run anyway"). The signing pipeline is already in place (see
 > [docs/signing.md](docs/signing.md)) — it just needs a certificate.
 
+## Optional
+
+- **Genre File**. The genre list appears when a `catver.ini` sits next to `mame.exe`. It's the fan-maintained category file from
+  [progettosnaps.net](https://www.progettosnaps.net/catver/); Download and copy to you MAME.exe folder.
+
 ## First run
 
 A short wizard walks you through it:
@@ -101,14 +84,14 @@ focus:
 
 | Button | Hotkey | Action |
 |---|---|---|
-| ⏮ Prev | `Ctrl+Alt+Left` | Go back to the previous game |
-| ⏸ Hold | `Ctrl+Alt+Down` | Pause rotation — current game keeps demoing |
-| ⏭ Skip | `Ctrl+Alt+Right` | Jump to the next game |
-| 🚫 Ban | `Ctrl+Alt+B` | Never show this game again |
-| ⭐ Favourite | `Ctrl+Alt+F` | Star the current game (then rotate just your stars via **File → Filter → Favourites only**) |
-| ▶ Play this game | `Ctrl+Alt+P` | Take the controls: a real, focused MAME session with no time cap — quit MAME to resume the rotation |
-| 🔊 Sound On/Off | `Ctrl+Alt+M` | Mute just MAME (not the rest of your system) |
-| 🔉 Volume −/+ | `Ctrl+Alt+-` / `Ctrl+Alt+=` | Lower / raise MAME's own volume in 10% steps (per-app, not your Windows volume) |
+| Prev | `Ctrl+Alt+Left` | Go back to the previous game |
+| Hold | `Ctrl+Alt+Down` | Pause rotation — current game keeps demoing |
+| Skip | `Ctrl+Alt+Right` | Jump to the next game |
+| Ban | `Ctrl+Alt+B` | Never show this game again |
+| Favourite | `Ctrl+Alt+F` | Star the current game (then rotate just your stars via **File → Filter → Favourites only**) |
+| Play this game | `Ctrl+Alt+P` | Take the controls: a real, focused MAME session with no time cap — quit MAME to resume the rotation |
+| Sound On/Off | `Ctrl+Alt+M` | Mute just MAME (not the rest of your system) |
+| Volume −/+ | `Ctrl+Alt+-` / `Ctrl+Alt+=` | Lower / raise MAME's own volume in 10% steps (per-app, not your Windows volume) |
 
 Hotkeys are remappable in `config.json`.
 
