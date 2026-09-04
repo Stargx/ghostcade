@@ -182,8 +182,9 @@ PowerShell prototype is preserved under `prototype/`.
 
 ## Credits & licence
 
-Ghostcade is written by **Steve Hunt** ([Cold Beam Games](https://coldbeamgames.com))
-and is MIT licensed (see [LICENSE](LICENSE)). Bundled fonts —
+Ghostcade is written by **Steve Hunt** <steve@coldbeamgames.com>
+([Cold Beam Games](https://coldbeamgames.com)) and is MIT licensed (see
+[LICENSE](LICENSE)). Bundled fonts —
 [Press Start 2P](https://github.com/google/fonts/tree/main/ofl/pressstart2p)
 and [DSEG](https://github.com/keshikan/DSEG) — are under the SIL Open Font
 License (see `src/Attractor.App/assets/fonts`). The bundled UI sound effects
